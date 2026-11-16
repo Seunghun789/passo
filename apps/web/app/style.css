@@ -43,3 +43,12 @@
 .pick-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:12px}.pick-form label{font-size:13px;color:#52525b}.shapes{margin-bottom:12px;flex-wrap:wrap}
 @media(max-width:768px){.chat{grid-template-columns:1fr}.chat-list{max-height:260px}.cal-day{min-height:60px}.calendar.week .cal-grid{grid-template-columns:1fr}.chat-form{grid-template-columns:1fr}}
 .widget .until{margin:4px 0 0}
+.search{max-width:320px;margin:0 0 10px}.entity-table{max-height:560px}
+.graph-layout{display:grid;grid-template-columns:minmax(0,3fr) minmax(280px,2fr);gap:20px;align-items:start}
+.graph-box{position:relative;margin:10px 0}.graph-wrap{position:relative}.graph{height:560px;border:1px solid var(--line);border-radius:10px;background:#fcfcfd}
+.zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:4px}.zoom button{min-height:30px;width:30px;padding:0;background:white}
+.node-card{position:absolute;top:10px;left:10px;width:min(300px,calc(100% - 20px));background:white;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px #0000001a;padding:12px 14px;font-size:13px}
+.node-card p{margin:6px 0}.node-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}.node-stats div{background:#f7f7f8;border-radius:6px;padding:6px 8px}.node-stats small,.node-stats b{display:block}.node-rel{color:#52525b}
+.pick-node{max-width:360px;font-size:13px;color:#52525b}.link-row{border-top:1px solid #f0f0f2;padding:8px 0}
+@media(max-width:1050px){.graph-layout{grid-template-columns:1fr}.graph{height:420px}}
+.link-row button,.toolbar>button{white-space:nowrap;flex:none}

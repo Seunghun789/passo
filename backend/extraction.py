@@ -60,6 +60,12 @@ def run_structure(fetch, tid, sheet, records, model=None):
         return plan_structure(Reader(fetch,tid),selected_model(model),sheet['title'],records,client)
 
 
+def run_entities(fetch, tid, structure, records):
+    from backend.structure import Reader, plan_entities
+    with ai_client() as client:
+        return plan_entities(Reader(fetch,tid),structure,records,client)
+
+
 def run_model(content, mime, model=None):
     from core.llm import extract
     selected = selected_model(model)

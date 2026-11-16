@@ -26,7 +26,7 @@ class Worker:
         return self.request('POST','/rest/v1/rpc/'+name,json=body or {}).json()
 
     def process(self, job):
-        from backend.extraction import run_ocr, run_model, run_structure, make_payload
+        from backend.extraction import run_ocr, run_model, run_structure, run_entities, make_payload
         stop, lost = threading.Event(), threading.Event()
         args = {'jid':job['id'],'fence':job['lease_token']}
         def heartbeat():
@@ -57,11 +57,14 @@ class Worker:
             if 'extraction' not in state:
                 state['extraction'] = run_model(content,job['media_type'],job.get('model_id'));save(state)
             payload = make_payload(state['extraction']['sheet'],state['ocr'])
+            fetch = lambda table,params: self.request('GET','/rest/v1/'+table,params=params).json()
             if 'structure' not in state:
-                fetch = lambda table,params: self.request('GET','/rest/v1/'+table,params=params).json()
                 state['structure'] = run_structure(fetch,job['tenant_id'],state['extraction']['sheet'],
                                                    payload['records'],job.get('model_id'));save(state)
             payload['structure'] = {k:state['structure'][k] for k in ('type','title','props','links','samples','evidence')}
+            if 'entities' not in state:
+                state['entities'] = run_entities(fetch,job['tenant_id'],payload['structure'],payload['records']);save(state)
+            payload['entities'] = {k:state['entities'][k] for k in ('classes','entities','same')}
             for record in payload['records']:
                 record['type_name'] = payload['structure']['type']
             if lost.is_set() or not self.rpc('passo_worker_finish',{**args,'payload':payload}):

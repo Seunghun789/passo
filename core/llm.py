@@ -389,13 +389,13 @@ def suggest_workspace(t, type_name, columns):
 
 # ---- 대상 층: 같은 대상 찾기, 대상 칸·하위 분류 제안 ----
 
-def match_entities(t, C, values, known):
+def match_entities(t, C, values, known, **ai):
     prompt = (
         f"'{C}' 대상 목록(별칭 포함):\n{known}\n새로 읽은 값: {values}\n"
         "새 값이 목록의 대상과 같은 것을 다르게 적은 것(줄임말·번호 표기·오타 등)이면 same_as 에 목록의 이름을, "
         "아니면 null 을 쓰세요. 확실하지 않으면 null. reason 은 한 문장."
     )
-    return ask_json(t, SMALL, prompt, obj(matches=array(obj(value=S, same_as=nullable(S), reason=S))), prompt, effort="low")["matches"]
+    return ask_json(t, SMALL, prompt, obj(matches=array(obj(value=S, same_as=nullable(S), reason=S))), prompt, effort="low", **ai)["matches"]
 
 
 def propose_entities(t, model, types, classes, schema_text, entity_names):
@@ -417,7 +417,7 @@ def propose_entities(t, model, types, classes, schema_text, entity_names):
 
 # ---- 지식그래프·대시보드·자동화 제안 ----
 
-def propose_links(t, model, schema_text, evidence, taken):
+def propose_links(t, model, schema_text, evidence, taken, **ai):
     prompt = (
         "기록 종류와 칸이 확정되었습니다. 칸 사이의 관계를 최대 4개 제안해 주세요. 근거가 약하면 적게 내거나 빈 목록.\n"
         f"확정된 종류와 칸:\n{schema_text}\n"
@@ -428,7 +428,7 @@ def propose_links(t, model, schema_text, evidence, taken):
         "'영향'(from 이 to 에 영향을 줌), '대체'(from 이 to 를 대신할 수 있음)를 쓰세요.\n"
         "- reason 은 위 근거에서 한 문장. 상관은 원인이 아니니 '함께 움직여요'처럼 쓰세요."
     )
-    return ask_json(t, model, prompt, obj(links=array(LINK)), prompt)["links"]
+    return ask_json(t, model, prompt, obj(links=array(LINK)), prompt, **ai)["links"]
 
 
 def kinds_of(types):

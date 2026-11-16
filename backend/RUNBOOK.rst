@@ -3,10 +3,11 @@ passo 인증·조직 격리 기반 (2026-11-13)
 
 적용 상태
 ---------
-현재 Supabase 프로젝트 dubxkjwglefkaidhktkc에 migration 001~014 적용.
+현재 Supabase 프로젝트 dubxkjwglefkaidhktkc에 migration 001~015와 016의 passo_link_propose 적용.
+016의 passo_link_cut([끊기], 관계 한 줄을 지운다)은 아직 적용하지 않았다.
 001은 Browser URL 길이 제한 때문에 5개 명시적 트랜잭션으로 나누어 적용했다.
 002는 기존 함수 정의의 오류 코드 40001만 PT409로 치환했다.
-재설치 시 schema.sql 이후 001~014을 번호 순서로 실행한다.
+재설치 시 schema.sql 이후 001~016을 번호 순서로 실행한다.
 001은 재실행용이 아니며 기존 정책이 있으면 의도적으로 실패한다.
 적용 증거와 검증 결과는 artifacts/auth-policy-20261113/review.html에 있다.
 

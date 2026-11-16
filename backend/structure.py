@@ -57,3 +57,18 @@ def plan_structure(reader, model, title, records, client):
     samples = {l: list(dict.fromkeys(str(v) for v in values[l] if v is not None))[:4] for l in labels}
     return {'type': T[:200], 'title': title, 'props': props, 'links': links, 'samples': samples, 'evidence': ai,
             'usage': usage, 'seconds': round(time.monotonic() - started, 3)}
+
+
+def plan_entities(reader, structure, records, client):
+    """구조가 정해진 새 기록에서 대상 등록 계획. 같은 대상 비교만 AI(작은 모델)를 부른다."""
+    from core import engine
+    from core.entities import matcher, plan
+    from core.record_cells import decode_record
+    K = engine.load(reader)
+    rows = [decode_record({'data': r['data']})['data'] for r in records]
+    usage, started = [], time.monotonic()
+    sink = lambda t, model, prompt, answer, used_in, used_out, started=None: usage.append(
+        {'model': model, 'input_tokens': used_in, 'output_tokens': used_out})
+    props = [{**p, 'name': p.get('similar_to') or p['name']} for p in structure['props']]
+    out = plan(K, structure['type'], props, rows, matcher(reader, client, sink))
+    return {**out, 'usage': usage, 'seconds': round(time.monotonic() - started, 3)}

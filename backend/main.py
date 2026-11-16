@@ -172,3 +172,5 @@ from backend.ask import install_routes as install_ask_routes
 install_ask_routes(app, session, gateway)
 from backend.insights import install_routes as install_insight_routes
 install_insight_routes(app, session, gateway)
+from backend.knowledge import install_routes as install_knowledge_routes
+install_knowledge_routes(app, session, gateway)

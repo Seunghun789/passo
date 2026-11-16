@@ -198,3 +198,25 @@ Vega-Lite 명세에는 서비스가 고른 기록 줄을 넣고, 꾸밈은 engin
 검증: tests/documents/test_insights.py(권한 · 서버가 다시 만든 규칙만 넣기 · 기록에서 센 숫자 · 요약 사용 기록),
 tests/documents/rules-cases.mjs · chats-cases.mjs(PGlite), eval/verify_insights_live.py(실제 Auth · API · 브라우저 · 모델,
 임시 계정과 기록을 만들고 끝나면 지운다).
+
+대상 등록 · 대상 · 지식그래프 (015 · 016)
+------------------------------------------
+워커는 구조를 정한 뒤 core/entities.plan으로 대상 계획(분류 · 새 대상 · 같은 대상)을 세워 payload.entities로 넘긴다.
+주 대상 칸(is_entity)이나 AI가 대상 분류를 단 칸은 분류로 잇고, 처음 보는 값은 띄어쓰기 · 대소문자만 다르면 코드가,
+아니면 등록된 대상이 있을 때만 작은 모델(llm.match_entities)이 같은 대상인지 본다. 015의 passo_private.apply_entities가
+기록 종류 · 칸 자동 반영 바로 뒤 같은 트랜잭션에서 반영하고, 반영한 것은 '승인'된 제안 줄로 근거와 함께 남는다.
+확정한 글 · 고르는 값 칸만 분류로 이을 수 있고, 기록 종류와 같은 이름의 분류는 만들지 않는다.
+
+GET /v1/workspaces/{tid}/entities는 분류 탭마다 대상 표(이름 · 별칭 · 정보 · 가리킨 기록 수)를 준다.
+POST .../entities/recommend([새로 추천받기])는 확정한 기록 전체로 같은 계획을 세워 passo_entities_apply로 반영한다.
+
+GET /v1/workspaces/{tid}/graph(entities=true면 [대상까지])는 core/graph의 점 · 선, 확정한 관계, 관계 제안 카드,
+[이어 보기]에 고를 칸을 준다. 웹은 vis-network로 그린다. [이어 보기](POST .../links)와 [새로 추천받기](POST .../links/recommend)는
+016의 passo_link_propose로 '연결' 카드를 올리고, 카드에는 기록으로 센 근거가 붙는다. [맞아요] · [아니요]는 확인 화면과 같은
+POST .../reviews/{qid}다. [끊기](POST .../links/{id}/cut)는 passo_link_cut을 쓴다.
+
+대상 표에서 값 고치기, [정보 더하기] · [별칭 더하기] · [하위 분류로 묶기] · [상위 분류 정하기], 관계 정보,
+점을 눌러 여는 설정 칸, 대상 정보 자동 제안(늘 같은 값인 칸)은 이 단계에 포함하지 않는다.
+
+검증: tests/documents/test_entities.py · test_knowledge.py, entity-cases.mjs · link-cases.mjs(PGlite),
+eval/verify_entities_live.py(실제 워커가 종이 한 장을 읽어 대상을 등록하고, API · 브라우저로 대상 표와 지식그래프를 확인한다).
