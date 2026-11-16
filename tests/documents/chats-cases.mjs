@@ -1,0 +1,47 @@
+// 014: 말로 만들기 대화는 사람마다 따로, 확인하는 사람 이상만. AI 추천 지표 · 업무는 같은 제목을 두 번 올리지 않는다.
+export async function chatsCases({db,as,denied,check}) {
+ await db.exec("insert into public.memberships(tenant_id,user_id,role) values(1,4,'확인하는 사람')");
+ const msgs=[{role:'user',text:'진동 7 넘으면'},{role:'assistant',text:'만들었어요',spec:{title:'진동 넘음',type:'점검'}}];
+ const save=(n,sid=null,m=msgs,kind='업무',tid=1)=>as(n,'select public.passo_chat_save($1,$2,$3,$4) as id',[tid,kind,sid,JSON.stringify(m)]);
+ const list=(n,kind='업무',tid=1)=>as(n,'select * from public.passo_chats($1,$2)',[tid,kind]);
+ const id=(await save(1))[0].id;
+ check('owner starts a chat',Number(id)>0&&(await list(1)).length===1);
+ check('chat kinds are separate',(await list(1,'지표')).length===0);
+ check('another reviewer does not see my chat',(await list(4)).length===0);
+ await denied('another reviewer cannot overwrite my chat',()=>save(4,id));
+ await denied('viewer cannot chat',()=>save(3));
+ await denied('uploader cannot chat',()=>save(5));
+ await denied('foreign workspace cannot list chats',()=>list(2));
+ await denied('chat saved into another workspace denied',()=>save(1,null,msgs,'업무',2));
+ await denied('unknown chat kind rejected',()=>save(1,null,msgs,'기타'));
+ await denied('chat must be a list',()=>as(1,'select public.passo_chat_save(1,$1,null,$2)',['업무',JSON.stringify({a:1})]));
+ await save(1,id,[...msgs,{role:'user',text:'8로 바꿔'}]);
+ check('chat continues in the same row',(await list(1))[0].messages.length===3);
+ const upd=(n,action,title=null,sid=id)=>as(n,'select public.passo_chat_update(1,$1,$2,$3)',[sid,action,title]);
+ await upd(1,'rename','진동 규칙');
+ check('chat renamed',(await list(1))[0].title==='진동 규칙');
+ await upd(1,'drop');
+ check('dropped chat is listed as deleted',(await list(1))[0].deleted_at!==null);
+ await denied('dropped chat cannot be continued',()=>save(1,id));
+ await upd(1,'restore');
+ check('restored chat is back',(await list(1))[0].deleted_at===null);
+ await denied('another reviewer cannot rename my chat',()=>upd(4,'rename','x'));
+ await db.query("update chat_sessions set deleted_at=now()-interval '31 days' where id=$1",[id]);
+ check('chat deleted over 30 days ago is gone',(await list(1)).length===0);
+ await denied('expired chat cannot be restored',()=>upd(1,'restore'));
+ await denied('chats table stays server only',()=>as(1,'select * from public.chat_sessions'));
+ const rule={title:'수량 1000 넘음',type:'재고 점검',conditions:[{prop:'수량',op:'>',value:'1000'}]};
+ const prop=(n,kind='업무',r=rule)=>as(n,'select public.passo_rule_propose(1,$1,$2) as id',[kind,r]);
+ const q=(await prop(1))[0].id;
+ check('AI suggestion becomes a pending card',(await db.query('select status,kind from proposals where id=$1',[q])).rows[0].status==='대기');
+ check('same suggestion is not added twice',(await prop(1))[0].id===q);
+ await denied('viewer cannot add suggestion',()=>prop(3));
+ await denied('suggestion kind limited to 지표 · 업무',()=>prop(1,'종류'));
+ await denied('suggestion without title rejected',()=>prop(1,'업무',{type:'x'}));
+ await as(1,'select public.passo_rule_settle(1,$1,false)',[q]);
+ check('later marks suggestion declined',(await db.query('select status from proposals where id=$1',[q])).rows[0].status==='거절');
+ await denied('settled suggestion cannot be settled again',()=>as(1,'select public.passo_rule_settle(1,$1,true)',[q]));
+ const other=(await db.query("select id from proposals where kind<>'지표' and kind<>'업무' limit 1")).rows[0];
+ if(other)await denied('settle cannot touch other card kinds',()=>as(1,'select public.passo_rule_settle(1,$1,true)',[other.id]));
+ await db.exec("delete from public.memberships where tenant_id=1 and user_id=4");
+}

@@ -467,21 +467,21 @@ def knowledge_text(schema_text, links_text, stats):
     return f"종류와 칸:\n{schema_text}\n사용자가 확정한 관계:\n{links_text or '(없음)'}\n기록 요약(서비스가 센 값):\n{stats}\n"
 
 
-def propose_widgets(t, model, types, schema_text, links_text, stats, taken):
+def propose_widgets(t, model, types, schema_text, links_text, stats, taken, **ai):
     prompt = (
         "확정된 기록으로 대시보드에 올릴 지표를 최대 4개 제안해 주세요.\n" + knowledge_text(schema_text, links_text, stats) +
         f"이미 있는 지표: {taken or '(없음)'}\n" + WIDGET_RULES + " 확정한 관계를 먼저 쓰세요."
     )
-    return ask_json(t, model, prompt, obj(widgets=array(widget_schema(types))), prompt)["widgets"]
+    return ask_json(t, model, prompt, obj(widgets=array(widget_schema(types))), prompt, **ai)["widgets"]
 
 
-def propose_automations(t, model, types, schema_text, links_text, stats, taken):
+def propose_automations(t, model, types, schema_text, links_text, stats, taken, **ai):
     prompt = (
         "기록이 계속 쌓입니다. 사람이 매번 훑어보는 반복 업무를 '먼저 볼 것' 규칙으로 최대 3개 제안해 주세요.\n" +
         knowledge_text(schema_text, links_text, stats) + f"이미 있는 규칙: {taken or '(없음)'}\n" + AUTO_RULES +
         " 확정한 관계를 먼저 쓰세요."
     )
-    return ask_json(t, model, prompt, obj(automations=array(auto_schema(types))), prompt)["automations"]
+    return ask_json(t, model, prompt, obj(automations=array(auto_schema(types))), prompt, **ai)["automations"]
 
 
 # ---- 빌드: 말로 만들기(대화) ----
@@ -506,7 +506,7 @@ VIEW_RULES = (
 )
 
 
-def build_chat(t, model, kind, history, request, types, cols, links_text, stats):
+def build_chat(t, model, kind, history, request, types, cols, links_text, stats, **ai):
     """말로 만들기 대화의 한 턴. 지표는 Vega-Lite 보기, 업무는 '먼저 볼 것' 규칙. 앞선 대화를 이어서 고친다.
     필요한 칸이 정말 없을 때만 missing 에 그 칸 이름을 쓴다(서비스가 다시 확인한다)."""
     spec, rules, what = (view_schema(types), VIEW_RULES, "대시보드에 올릴 보기(그래프·달력·표)") if kind == "지표" else \
@@ -523,7 +523,7 @@ def build_chat(t, model, kind, history, request, types, cols, links_text, stats)
         "사용자가 할 수 없는 일(칸의 값 종류 바꾸기, 기능 추가하기)을 안내하지 않는다."
     )
     log = system + "\n" + "\n".join(f"{m['role']}: {m['content']}" for m in history) + f"\nuser: {request}"
-    return ask_json(t, model, request, obj(reply=S, spec=nullable(spec), missing=array(S)), log, system, history)
+    return ask_json(t, model, request, obj(reply=S, spec=nullable(spec), missing=array(S)), log, system, history, **ai)
 
 
 # ---- 이번 주 요약 ----

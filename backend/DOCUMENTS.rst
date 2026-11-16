@@ -162,8 +162,8 @@ core/engine의 조회 도구가 기록에서 세며, 모델은 도구를 고르�
 tests/documents/usage-log-cases.mjs(PGlite), eval/verify_ask_live.py(실제 Auth·API·브라우저·모델,
 임시 계정과 기록을 만들고 끝나면 지운다).
 
-홈 · 대시보드 · 자동화 (013)
------------------------------
+홈 · 대시보드 · 자동화 (013 · 014)
+-----------------------------------
 GET /v1/workspaces/{tid}/home은 켜 둔 자동화 중 걸린 것이 많은 두 장(한 문장, 걸린 대상마다
 왜 · 안 보면, 근거 기록), 더 걸린 것 · 걸린 것이 없는 것, 보는 기간 한눈에를 준다.
 GET /v1/workspaces/{tid}/automations는 켜 둔 · 꺼 둔 자동화와 반복 업무 제안(지금 걸린 것,
@@ -179,9 +179,22 @@ GET /v1/workspaces/{tid}/automations는 켜 둔 · 꺼 둔 자동화와 반복 �
 POST /v1/workspaces/{tid}/week-summary([이번 주 요약 만들기])는 engine.week_facts가 센 숫자로
 모델이 문장만 쓰고, 문장마다 근거 기록을 붙인다. 사용 기록은 묻기와 같이 passo_log_ai로 남긴다.
 
+[만들기]는 세 가지다. 보기 고르기(engine.gallery)와 골라서 만들기(POST /v1/workspaces/{tid}/widgets/preview)는
+코드가 기록으로 그리고 AI를 부르지 않는다. 말로 만들기(POST /v1/workspaces/{tid}/chats)는 AI가 초안을 짓고
+서비스가 칸을 검사해 미리보기만 보인다. 대화는 014의 passo_chats · passo_chat_save · passo_chat_update로
+사람마다 따로 저장하고, [이름 바꾸기] · [지우기] · [되돌리기](지운 뒤 30일)를 한다.
+[올리기] · [켜기]는 source(rule · proposal · gallery · pick · chat)를 받아 서버가 그 자리에서 규칙을 다시 찾고
+valid_spec으로 검사한 것만 넣는다. 대화에서 반영하면 그 말에 done을 남긴다.
+[새로 추천받기](POST .../automations/recommend, .../widgets/recommend)는 AI가 제안한 것 중 검사를 지난 것만
+passo_rule_propose로 카드로 올리고, [나중에]는 passo_rule_settle로 거절한다.
+
+보기는 core/insights.view가 화면이 그릴 모양(숫자 · Vega-Lite · 표 · 상태별 · 목록 · 달력)으로 만든다.
+Vega-Lite 명세에는 서비스가 고른 기록 줄을 넣고, 꾸밈은 engine.VIEW_STYLE 하나다. 웹은 vega-embed로 그린다.
+올린 일정 달력은 GET /v1/workspaces/{tid}/widgets/{wid}/calendar(mode · offset)로 넘긴다.
+
 "오늘"은 서버 시간대로 센다. API 서버는 TZ=Asia/Seoul로 띄운다(render.yaml).
-말로 만들기 대화, 보기 고르기 · 골라서 만들기, 일정 달력, AI가 새로 추천받기는 이 단계에 포함하지 않는다.
+달력의 빈 날을 눌러 직접 적기는 이 단계에 포함하지 않는다.
 
 검증: tests/documents/test_insights.py(권한 · 서버가 다시 만든 규칙만 넣기 · 기록에서 센 숫자 · 요약 사용 기록),
-tests/documents/rules-cases.mjs(PGlite), eval/verify_insights_live.py(실제 Auth · API · 브라우저 · 모델,
+tests/documents/rules-cases.mjs · chats-cases.mjs(PGlite), eval/verify_insights_live.py(실제 Auth · API · 브라우저 · 모델,
 임시 계정과 기록을 만들고 끝나면 지운다).

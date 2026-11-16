@@ -11,7 +11,6 @@ HOME_MAX = 2     # 홈 "오늘 먼저 볼 것"에 띄우는 걸린 자동화 카
 WHY_MAX = 2      # 카드에서 왜 · 안 보면을 보이는 걸린 대상 수
 FOLLOW_MAX = 2   # 카드마다 이어서 볼 것 수
 ROWS_MAX = 50    # 근거 표로 보내는 줄 수
-TREND_MAX = 60   # 추이 그림으로 보내는 점 수(최근부터)
 
 
 def fmt(v):
@@ -121,15 +120,6 @@ def table(K, df, limit=ROWS_MAX):
     return plain({"columns": cols, "rows": rows, "total": int(len(df))})
 
 
-def series(df, limit=TREND_MAX):
-    """추이 표(날짜 × 선) → [{날짜, 선 이름: 값}] 최근 limit 점."""
-    if df is None or not len(df):
-        return {"lines": [], "points": []}
-    df = df.tail(limit)
-    return plain({"lines": [str(c) for c in df.columns],
-                  "points": [{"date": str(i), **{str(c): v for c, v in row.items()}} for i, row in df.iterrows()]})
-
-
 def rule_text(spec):
     return f"{spec['type']}: {' 그리고 '.join(cond_text(c) for c in spec['conditions'])}"
 
@@ -169,21 +159,108 @@ def suggestion_card(K, spec, today=None):
                   "chip": alert_kind(spec)[0], "evidence": table(K, hits)})
 
 
-def widget_card(K, spec, period="이번 주"):
-    """지표 한 장: 숫자 하나면 이 기간 값 · 앞 기간 값 · 근거 줄, 추이면 기간 안의 선."""
-    a, b, _, _ = engine.period_range(period)
-    if spec.get("kind") in ("kpi", "count_where"):
+DAY_KO = "월화수목금토일"
+
+
+def hm(at):
+    """'오후 3시', '오전 10시 30분'."""
+    h, m = at.hour, at.minute
+    return f"{'오전' if h < 12 else '오후'} {h % 12 or 12}시" + (f" {m}분" if m else "")
+
+
+def day_ko(d):
+    return f"{d.month}/{d.day}({DAY_KO[d.weekday()]})"
+
+
+def line_vega(df, height=None):
+    """날짜별 추이 선(Vega-Lite). 대화로 만든 보기와 같은 꾸밈(VIEW_STYLE)."""
+    d = df.copy()
+    d.index = pd.to_datetime(d.index, errors="coerce")
+    d.index.name = "날짜"
+    long = d.reset_index().melt(id_vars="날짜", var_name="계열", value_name="값").dropna(subset=["값", "날짜"])
+    long["날짜"] = long["날짜"].dt.strftime("%Y-%m-%d")
+    return {"data": {"values": long.to_dict("records")}, "mark": {"type": "line", "point": len(long) < 30},
+            "encoding": {"x": {"field": "날짜", "type": "temporal", "title": None, "axis": {"format": "%-m/%-d", "labelAngle": 0}},
+                         "y": {"field": "값", "type": "quantitative", "title": None},
+                         "color": {"field": "계열", "type": "nominal", "title": None}},
+            "height": height or engine.VIEW_HEIGHT, "config": engine.VIEW_STYLE}
+
+
+def bar_vega(out):
+    """나눈 값마다 가로 막대와 값."""
+    d = [{"묶음": str(a), "값": v} for a, v in zip(out.iloc[:, 0], out["값"])]
+    return {"data": {"values": d}, "layer": [{"mark": {"type": "bar"}},
+            {"mark": {"type": "text", "align": "left", "dx": 4}, "encoding": {"text": {"field": "값", "type": "quantitative", "format": ",.4~f"}}}],
+            "encoding": {"y": {"field": "묶음", "type": "nominal", "sort": None, "title": None, "axis": {"labelOverlap": False}},
+                         "x": {"field": "값", "type": "quantitative", "title": None, "axis": None, "scale": {"nice": False}}},
+            "padding": {"right": 48}, "height": max(80, 28 * len(d)), "config": engine.VIEW_STYLE}
+
+
+def calendar_view(K, spec, mode, offset, today=None):
+    """일정 달력: 날마다 그날 일정(시각 · 이름 · 곁 글 · 색). 일정을 누르면 그 기록을 연다."""
+    today = today or date.today()
+    days, ev, tones, label = engine.calendar(K, spec, mode, offset, today)
+    return {"kind": "calendar", "mode": mode, "offset": offset, "label": label, "heads": list("일월화수목금토"),
+            "days": [{"iso": d["day"].isoformat(), "n": d["day"].day, "wd": (d["day"].weekday() + 1) % 7, "wdk": DAY_KO[d["day"].weekday()],
+                      "today": d["day"] == today, "past": d["day"] < today, "out": d["out"],
+                      "events": [{"id": int(r["_id"]), "time": hm(r["at"]).replace(" ", "") if r["timed"] else "", "name": r["name"],
+                                  "side": r["side"], "color": tones.get(r["tone"], "#A1A1AA")} for r in d["events"]]} for d in days],
+            "legend": [{"name": k, "color": c} for k, c in tones.items()]}, ev
+
+
+def view(K, spec, period="이번 주", cal=None, today=None):
+    """지표 한 장을 화면이 그릴 모양으로: 숫자 · 그림(Vega-Lite, 기록 줄을 넣은 것) · 표 · 상태별 · 목록 · 달력.
+    숫자와 줄은 engine 이 기록에서 센다. cal=(mode, offset)은 달력을 넘길 때."""
+    kind, base = spec.get("kind"), {"title": spec["title"], "until": until(K, spec["type"]), "reason": spec.get("reason")}
+    if not engine.valid_spec(K, spec):
+        return {**base, "kind": "empty", "message": "기록에 없는 칸이 들어 있어 그리지 못했어요.", "evidence": table(K, None)}
+    if kind in ("kpi", "count_where"):
         v, pv, ev = engine.period_values(K, spec, period)
-        return plain({"title": spec["title"], "kind": "number", "value": fmt(v), "previous": fmt(pv),
-                      "previous_label": engine.PERIODS[period][0], "until": until(K, spec["type"]),
-                      "reason": spec.get("reason"), "evidence": table(K, ev)})
-    if spec.get("kind") == "trend" and engine.valid_spec(K, spec):
+        return plain({**base, "kind": "number", "value": fmt(v), "previous": fmt(pv), "previous_label": engine.PERIODS[period][0],
+                      "rule": " 그리고 ".join(cond_text(c) for c in spec.get("conditions") or []), "evidence": table(K, ev)})
+    if kind == "trend":
+        a, b, _, _ = engine.period_range(period, today)
         df = engine.match(engine.frame(K, spec["type"]), spec.get("conditions"))
         seen = df[(df["날짜"] >= a.isoformat()) & (df["날짜"] <= b.isoformat())]
-        return plain({"title": spec["title"], "kind": "trend", "until": until(K, spec["type"]), "reason": spec.get("reason"),
-                      "series": series(engine.trend(K, spec["type"], seen, spec["props"], engine.PERIODS[period][1])),
+        if not len(seen):
+            return {**base, "kind": "empty", "message": f"{period}에는 그릴 기록이 없어요.", "evidence": table(K, seen)}
+        return plain({**base, "kind": "vega", "vega": line_vega(engine.trend(K, spec["type"], seen, spec["props"], engine.PERIODS[period][1])),
                       "evidence": table(K, seen)})
-    return None  # 대화로 만든 보기·달력은 다음 단계에서 웹에 옮긴다
+    if kind == "view":
+        rows = engine.view_rows(K, spec)
+        v = engine.vega_of(spec, engine.view_cols(K, spec["type"]))
+        data = plain(rows.drop(columns=["_id", "_photo"]).to_dict("records"))
+        return plain({**base, "kind": "vega", "vega": {**v, "data": {"values": data}}, "evidence": table(K, rows)})
+    shape = spec.get("shape")
+    if shape == "달력":
+        mode, off = cal or (("week", 0) if period in ("오늘", "이번 주") else ("month", engine.first_month(K, spec, today)))
+        out, ev = calendar_view(K, spec, mode, off, today)
+        return plain({**base, **out, "evidence": table(K, ev)})
+    if shape == "목록":
+        _, _, rows = engine.coming(K, spec, today)
+        _, ev, tones = engine.schedule(K, spec, today)
+        items = [{"id": int(r["_id"]), "at": day_ko(r["at"]) + (" " + hm(r["at"]) if r["timed"] else ""), "name": r["name"], "side": r["side"],
+                  "color": tones.get(r["tone"], "#A1A1AA")} for r in rows[:engine.LIST_MAX]]
+        return plain({**base, "kind": "list", "items": items, "more": max(0, len(rows) - engine.LIST_MAX), "prop": spec["prop"],
+                      "evidence": table(K, ev[ev["_id"].isin({r["_id"] for r in rows})])})
+    out, ev = engine.pick_values(K, spec, period, today)
+    if not len(out):
+        return {**base, "kind": "empty", "message": f"{period}에는 셀 기록이 없어요.", "evidence": table(K, ev)}
+    if shape == "막대":
+        return plain({**base, "kind": "vega", "vega": bar_vega(out), "evidence": table(K, ev)})
+    if shape == "선":
+        return plain({**base, "kind": "vega", "vega": line_vega(out.set_index(spec["by"])[["값"]].rename(columns={"값": spec["title"]})),
+                      "evidence": table(K, ev)})
+    if shape == "표":
+        fn = engine.FNS[spec.get("fn") or "count"]
+        shown = out.assign(값=out["값"].round(1)).rename(columns={"값": fn, "줄": "근거 줄"})
+        return plain({**base, "kind": "table", "columns": [str(c) for c in shown.columns], "rows": shown.to_dict("records"),
+                      "evidence": table(K, ev)})
+    ent = engine.entity(K, spec["type"])  # 상태별: 값마다 건수와 최근 대상 두 개
+    items = [{"label": str(r[0]), "value": fmt(r[1]),
+              "names": list(ev[ev[spec["by"]].astype(str) == str(r[0])][ent].dropna().astype(str).head(2)) if ent else []}
+             for r in out.head(4).itertuples(index=False)]
+    return plain({**base, "kind": "status", "items": items, "evidence": table(K, ev)})
 
 
 def glance(K, widgets, period="이번 주"):

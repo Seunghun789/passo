@@ -83,7 +83,7 @@ def install_routes(app, session, gateway):
                 http.close()
         try:
             result = await asyncio.to_thread(work)
-        except (anthropic.APIError, RuntimeError) as exc:
+        except (anthropic.APIError, RuntimeError, httpx.HTTPError) as exc:
             # 질문·답·키는 로그에 남기지 않는다. 어떤 종류의 실패인지만 남긴다.
             print(json.dumps({'ask': 'failed', 'error_type': type(exc).__name__, 'status': getattr(exc, 'status_code', None),
                               'read': str(exc) if str(exc).startswith('read_failed:') else None}), flush=True)

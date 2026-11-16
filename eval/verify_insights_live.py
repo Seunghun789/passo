@@ -68,12 +68,12 @@ def main():
   post('memberships',{'tenant_id':created['tenants'][1],'user_id':accounts[2]['id'],'role':'주인'})
   tid=created['tenants'][0];T='재고 점검';day=lambda n:(date.today()-timedelta(days=n)).isoformat()
   post('object_types',{'tenant_id':tid,'name':T,'kind':'기록'})
-  for i,(name,dtype,unit,ent) in enumerate((('품목','text',None,True),('수량','number','개',False))):
+  for i,(name,dtype,unit,ent) in enumerate((('품목','text',None,True),('수량','number','개',False),('다음 점검','date',None,False))):
    post('property_defs',{'tenant_id':tid,'type_name':T,'name':name,'dtype':dtype,'unit':unit,'is_entity':ent,'position':i})
    post('alias_dict',{'tenant_id':tid,'type_name':T,'alias':name,'prop_name':name})
   # 생수는 이틀마다 들어오다 열흘째 없고, 라면은 오늘도 들어왔다 → '재고 점검 4일 넘게 없음'에 생수만 걸린다
   rows=[('생수',n,str(40-n)) for n in (10,12,14,16)]+[('라면',n,'12') for n in (0,2,4,6)]
-  ok(sb('POST','/rest/v1/records',json=[encode_record({'tenant_id':tid,'type_name':T,'occurred_at':day(n),'status':'확정','data':{'품목':x,'수량':q}}) for x,n,q in rows]))
+  ok(sb('POST','/rest/v1/records',json=[encode_record({'tenant_id':tid,'type_name':T,'occurred_at':day(n),'status':'확정','data':{'품목':x,'수량':q,'다음 점검':day(n-7)}}) for x,n,q in rows]))
   post('object_types',{'tenant_id':created['tenants'][1],'name':T,'kind':'기록'})
   ok(sb('POST','/rest/v1/records',json=[encode_record({'tenant_id':created['tenants'][1],'type_name':T,'occurred_at':day(30),'status':'확정','data':{'품목':'남의 것','수량':'900'}})]))
   owner,viewer,other=({'Authorization':x['Authorization']} for x in accounts);base=f'{a.api}/v1/workspaces/{tid}';GAP=f'{T} 4일 넘게 없음'
@@ -107,11 +107,44 @@ def main():
    check('turning off moves it to the off list',page.get_by_text('꺼 둔 자동화 1개').count()==1 and page.get_by_role('button',name='끄기').count()==0)
    page.screenshot(path=str(a.output/'automation.png'),full_page=True)
    page.goto(a.web+f'/?workspace={tid}&view=dashboard');page.get_by_text('기록 현황').wait_for(timeout=60000)
-   check('browser dashboard shows the trend chart',page.locator('.line-chart svg').count()>=1)
+   page.locator('.vega svg').first.wait_for(timeout=60000);check('browser dashboard shows the trend chart',page.locator('.vega svg').count()>=1)
+   page.get_by_role('button',name='만들기',exact=True).click();page.get_by_role('tab',name='말로 만들기').click()
+   page.get_by_label('말로 만들기').fill('품목별 수량 평균을 막대 그래프로');page.get_by_role('button',name='보내기').click()
+   page.locator('.msg.assistant .vega svg').first.wait_for(timeout=180000)
+   check('dashboard chat draws a preview from records',page.locator('.msg.assistant .vega svg').count()>=1)
+   page.locator('.msg.assistant .card-actions button',has_text='올리기').first.click();page.get_by_text('대시보드에 올렸어요.').first.wait_for(timeout=60000)
+   page.get_by_role('tab',name='보기 고르기').click();page.locator('.make .widget-grid .widget').first.wait_for(timeout=60000)
+   check('view picker shows tiles drawn from records',page.locator('.make .widget-grid .widget').count()>=3)
    page.screenshot(path=str(a.output/'dashboard.png'),full_page=True);browser.close()
   check('home is quiet after turning off',ok(c.get(base+'/home',headers=owner))['enabled']==0)
+  widgets=ok(sb('GET','/rest/v1/widgets',params={'tenant_id':f'eq.{tid}','select':'id,spec,status'}))
+  check('chat view is put up on the dashboard',any(w['spec'].get('kind')=='view' for w in widgets),widgets=[w['spec'].get('title') for w in widgets])
+  dash=ok(c.get(base+'/dashboard',headers=owner,params={'period':'이번 달'}))
+  cal=next((v for v in dash['gallery'] if v.get('shape')=='달력'),None)
+  check('view picker offers a calendar from the future-date field',cal is not None,shapes=[v.get('shape') for v in dash['gallery']])
+  wid=ok(c.post(base+'/widgets',headers=owner,json={'title':cal['title'],'source':'gallery'}))['id']
+  moved=ok(c.get(base+f'/widgets/{wid}/calendar',headers=owner,params={'mode':'month','offset':'1'}))
+  check('calendar moves to the next month',moved['kind']=='calendar' and moved['offset']==1 and len(moved['days'])>=28)
+  pick={'type':T,'shape':'막대','fn':'avg','prop':'수량','by':'품목'}
+  prev=ok(c.post(base+'/widgets/preview',headers=owner,params={'period':'올해'},json={'pick':pick}))
+  check('pick preview counts in code',{r['묶음']:r['값'] for r in prev['view']['vega']['data']['values']}=={'생수':27.0,'라면':12.0},how=prev.get('how'))
+  check('client-made rule is refused',c.post(base+'/widgets',headers=owner,json={'title':'가짜','source':'pick','pick':{**pick,'by':'없는 칸'}}).status_code==422)
+  started=time.monotonic();r=c.post(base+'/chats',headers=owner,json={'kind':'업무','request':'수량이 15보다 적으면 먼저 볼 것에 올려 줘'})
+  check('automation chat answers with a rule',r.status_code==200 and any(m.get('preview') for m in r.json()['messages']),status=r.status_code,seconds=round(time.monotonic()-started,1))
+  talk=r.json();m=next(m for m in talk['messages'] if m.get('preview'))
+  check('chat rule counts current hits',m['preview']['count']>=1,count=m['preview']['count'],title=m['title'])
+  ok(c.post(base+'/automations',headers=owner,json={'title':m['title'],'source':'chat','chat_id':talk['id'],'index':m['index']}))
+  listed=ok(c.get(base+'/chats',headers=owner,params={'kind':'업무'}))
+  check('chat shows it was turned on',listed[0]['made'] is True)
+  check('another member cannot see my chats',c.get(base+'/chats',headers=viewer,params={'kind':'업무'}).status_code==403)
+  ok(c.post(base+f'/chats/{talk["id"]}',headers=owner,json={'action':'drop'}))
+  check('dropped chat can be restored',ok(c.get(base+'/chats',headers=owner,params={'kind':'업무'}))[0]['deleted_at'] is not None)
+  ok(c.post(base+f'/chats/{talk["id"]}',headers=owner,json={'action':'restore'}))
+  rec=ok(c.post(base+'/automations/recommend',headers=owner))
+  auto=ok(c.get(base+'/automations',headers=owner))
+  check('AI recommendations become cards',len([s for s in auto['suggestions'] if s.get('source')=='proposal'])==rec['added'],added=rec['added'])
   logs=ok(sb('GET','/rest/v1/ai_logs',params={'tenant_id':f'eq.{tid}','select':'model,input_tokens,output_tokens,cost_usd,duration_ms'}))
-  check('weekly summary usage is recorded',len(logs)==1 and logs[0]['input_tokens']>0,log=logs[0] if logs else None)
+  check('every AI call is recorded',len(logs)>=4 and all(l['input_tokens']>0 for l in logs),calls=len(logs),cost=round(sum(float(l['cost_usd']) for l in logs),4))
   report['status']='passed'
  except Exception as exc:
   report['status']='failed';report['error_type']=type(exc).__name__;save();raise

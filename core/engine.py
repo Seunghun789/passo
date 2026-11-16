@@ -2491,15 +2491,16 @@ def suggest_automations(t, model):
             propose(t, "업무", a)
 
 
-def build_chat(t, model, kind, history, request):
+def build_chat(t, model, kind, history, request, K=None, **ai):
     """말로 만들기 대화 한 턴 → {text: 보일 말, spec: 초안 또는 None, raw: 다음 턴에 넘길 AI 답}.
-    지표는 AI가 지은 Vega-Lite 보기(kind 'view'), 업무는 조건 규칙. 칸이 정말 없을 때의 안내는 서비스가 확인해서 쓴다."""
-    K = load(t)
+    지표는 AI가 지은 Vega-Lite 보기(kind 'view'), 업무는 조건 규칙. 칸이 정말 없을 때의 안내는 서비스가 확인해서 쓴다.
+    ai: llm 에 넘길 api_client · log_sink(API 서버가 부른 사람의 워크스페이스로 남길 때)."""
+    K = K or load(t)
     args = (K["types"], cols_text(K), links_text(K), stats_text(K))
-    out = llm.build_chat(t, model, kind, history, request, *args)
+    out = llm.build_chat(t, model, kind, history, request, *args, **ai)
     if (s := draft(K, kind, out)) and (bad := view_problems(K, s)):  # 없는 칸을 썼으면 알려 주고 한 번 다시 짓게 한다
         retry = [*history, {"role": "user", "content": request}, {"role": "assistant", "content": json.dumps(out, ensure_ascii=False)}]
-        out = llm.build_chat(t, model, kind, retry, f"방금 그림에 칸 목록에 없는 이름이 있어요: {sorted(bad)}. 칸 목록의 이름만 써서 다시 만들어 주세요.", *args)
+        out = llm.build_chat(t, model, kind, retry, f"방금 그림에 칸 목록에 없는 이름이 있어요: {sorted(bad)}. 칸 목록의 이름만 써서 다시 만들어 주세요.", *args, **ai)
     raw = json.dumps(out, ensure_ascii=False)
     s, text = draft(K, kind, out), out["reply"]
     if s and not valid_spec(K, s):

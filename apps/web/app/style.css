@@ -24,7 +24,22 @@
 .more-alerts{margin:0 0 12px;font-size:13px}.more-alerts summary{cursor:pointer;color:var(--muted)}.more-alerts p{margin:4px 0}
 .suggestion{margin:0 0 14px}.suggestion p{margin:6px 0}.card-actions{display:flex;justify-content:flex-end;gap:8px;margin:8px 0 4px}
 .widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin:0 0 20px}.widget{min-width:0}.big-number{display:block;font-size:32px;font-weight:400;line-height:1.4;margin:8px 0 2px}
-.line-chart{margin:8px 0 4px}.line-chart svg{width:100%;height:auto;display:block}.line-chart .axis{stroke:var(--line)}.line-chart .tick{font-size:11px;fill:var(--muted)}.line-chart figcaption{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}.line-chart figcaption i{display:inline-block;width:10px;height:3px;margin-right:5px;vertical-align:middle}
 .week{margin:0 0 16px}.week p{margin:10px 0 2px}
 @media(max-width:768px){.widget-grid{grid-template-columns:1fr}.alert-foot small{width:100%}}
 .greeting-row{flex-wrap:wrap}.greeting-row .week{flex-basis:100%;margin-top:6px}
+.vega{width:100%;min-height:80px}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin:8px 0}.status-grid .panel{padding:12px}.status-grid span{display:block;font-size:13px}.status-grid strong{display:block;font-size:24px;font-weight:400}
+.upcoming{list-style:none;padding:0;margin:8px 0}.upcoming li{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid #f0f0f2;font-size:13px}.upcoming i{width:8px;height:8px;border-radius:50%;flex:none}
+.cal-head{margin:4px 0 8px}.cal-nav{display:flex;gap:8px;flex-wrap:wrap}.cal-nav button{min-height:32px;font-size:13px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}.cal-hd{font-size:12px;color:var(--muted);text-align:center;padding:4px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fafafa}.cal-hd.sun,.cal-day.sun .cal-n{color:#dc2626}
+.cal-day{min-height:84px;padding:4px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:3px;min-width:0}.calendar.week .cal-day{min-height:150px}.cal-day.out{background:#fafafa}.cal-day.out .cal-n{color:#c4c4c8}.cal-day.today .cal-n{color:var(--accent);font-weight:600}.cal-n{font-size:12px}
+.cal-ev{display:flex;flex-direction:column;align-items:flex-start;gap:0;min-height:0;padding:3px 6px;border:1px solid var(--line);border-left:3px solid #a1a1aa;border-radius:4px;font-size:12px;text-align:left;overflow:hidden}.cal-ev span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.cal-ev small{font-size:11px}.cal-ev.on{background:var(--accent-bg)}
+.cal-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin:6px 0}.cal-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.cal-pick{margin-top:10px}.cal-pick dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13px;margin:8px 0}.cal-pick dt{color:var(--muted)}.cal-pick dd{margin:0;overflow-wrap:anywhere}
+.make{margin:12px 0 20px}.make .tabs{margin-top:0}
+.chat{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px;margin:8px 0 24px}.chat-list{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:12px;max-height:640px;overflow:auto}.chat-list>div>button{display:flex;justify-content:space-between;width:100%;border:0;min-height:32px;text-align:left;font-size:13px}.chat-list button.active{background:var(--accent-bg)}.chat-list details{font-size:13px;margin-top:8px}.chat-list summary{cursor:pointer;color:var(--muted)}
+.chat-main{min-width:0}.msg{margin:10px 0}.msg.user p{display:inline-block;background:#f4f4f5;border-radius:10px;padding:8px 12px;margin:0}.msg.assistant>p{margin:6px 0}
+.chat-form{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px}.rename{display:flex;gap:8px}.rename input{min-width:220px}
+.pick-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:12px}.pick-form label{font-size:13px;color:#52525b}.shapes{margin-bottom:12px;flex-wrap:wrap}
+@media(max-width:768px){.chat{grid-template-columns:1fr}.chat-list{max-height:260px}.cal-day{min-height:60px}.calendar.week .cal-grid{grid-template-columns:1fr}.chat-form{grid-template-columns:1fr}}
+.widget .until{margin:4px 0 0}
