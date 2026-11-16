@@ -20,12 +20,24 @@ FNS = ["count", "sum", "avg", "min", "max", "latest"]
 SCOPES = ["latest", "recent7", "all"]
 
 
+RUNYOUR = "https://api.runyour.ai"  # Anthropic 방식 요청(/v1/messages)을 그대로 받는 중개 서버
+
+
+def connect(env):
+    """AI 를 부를 곳과 키(anthropic.Anthropic 에 넘길 값). RUNYOUR_API_KEY 가 있으면 Runyour 를 거치고, 없으면 Anthropic 에 바로 간다.
+    Runyour 는 받지 못하는 설정을 만나면 오류 없이 멈춰서 시간 제한을 두고 다시 보내지 않는다."""
+    key = env.get("RUNYOUR_API_KEY", "").strip()
+    if key:
+        return {"auth_token": key, "base_url": RUNYOUR, "timeout": 180, "max_retries": 0}
+    key = env.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("ANTHROPIC_API_KEY 가 비어 있어요.")
+    return {"api_key": key}
+
+
 def client():
     from . import db
-    KEY = db.env.get("ANTHROPIC_API_KEY", "").strip()
-    if not KEY:
-        raise RuntimeError("ANTHROPIC_API_KEY 가 비어 있어요.")
-    return anthropic.Anthropic(api_key=KEY)
+    return anthropic.Anthropic(**connect(db.env))
 
 
 def log(t, model, prompt, answer, usage_in, usage_out, started=None):
@@ -40,16 +52,16 @@ def log(t, model, prompt, answer, usage_in, usage_out, started=None):
         pass
 
 
-def thinking(model, effort):
+def thinking(model, effort, runyour=False):
     """생각 설정. effort 가 None 이면 모델 기본, 'off' 면 생각 없이 바로 답하고, 'low'·'medium' 이면 생각 깊이를 그만큼 낮춘다.
     생각 토큰도 출력이라 기다리는 시간과 값에 든다. 적힌 것을 옮겨 적거나 짧게 고르는 호출은 생각이 답을 낫게 하지 않는다.
     끄는 방법은 모델마다 다르다: Sonnet 5.5 는 'between_tools'(도구가 없으면 생각하지 않음), Haiku 5.5 는 'disabled',
-    Opus 5.5 는 끌 수 없어 깊이를 가장 낮춘다."""
+    Opus 5.5 는 끌 수 없어 깊이를 가장 낮춘다. Runyour 를 거치면 Sonnet 도 끄는 설정이 통하지 않아 깊이를 가장 낮춘다."""
     if effort is None:
         return {}, {}
     if effort != "off":
         return {}, {"effort": effort}
-    if model.startswith("claude-sonnet"):
+    if model.startswith("claude-sonnet") and not runyour:
         return {"thinking": {"type": "between_tools"}}, {}
     if model.startswith("claude-haiku"):
         return {"thinking": {"type": "disabled"}}, {}
@@ -60,9 +72,10 @@ def ask_json(t, model, content, schema, log_prompt, system=None, history=(), eff
     """스키마대로 JSON 을 받는다. 화면에 글로 보여 주지 않고 서비스가 쓴다. history 는 앞선 대화.
     effort: 생각 깊이(thinking 참고). on_text: 답이 흘러 들어오는 대로 받은 글 조각을 넘길 함수(읽는 중 진행 표시)."""
     started = time.monotonic()
-    think, config = thinking(model, effort)
+    api_client = api_client or client()
+    think, config = thinking(model, effort, str(getattr(api_client, "base_url", "")).startswith(RUNYOUR))
     # 표가 큰 종이는 답이 길어 16000 토큰을 넘는다. 긴 답은 스트리밍으로만 받을 수 있다
-    with (api_client or client()).messages.stream(
+    with api_client.messages.stream(
         model=model, max_tokens=64000, messages=[*history, {"role": "user", "content": content}],
         output_config={"format": {"type": "json_schema", "schema": schema}, **config}, **think,
         **({"system": system} if system else {}),

@@ -97,7 +97,7 @@ def main():
    page.goto(a.web+'/login');page.locator('input[name=email]').fill(accounts[0]['email']);page.locator('input[name=password]').fill(accounts[0]['password'])
    page.get_by_role('button',name='이메일로 로그인').click();page.locator('.workspace-main h1').wait_for(timeout=60000);page.goto(a.web+f'/?workspace={tid}&view=upload')
    page.get_by_label('문서 파일').set_input_files(str(fixture))
-   with page.expect_response(lambda r:'/api/workspaces/' in r.url and r.request.method=='POST',timeout=45000) as response:
+   with page.expect_response(lambda r:'/api/workspaces/' in r.url and '/documents' in r.url and r.request.method=='POST',timeout=45000) as response:
     page.get_by_role('button',name='읽기 시작',exact=True).click()
    r=response.value;check('browser upload reaches real API',r.status==202,status=r.status)
    j=ok(c.get(base,headers=apiheaders))[0];jid=j['id'];report['job']=jid;save()
@@ -108,7 +108,7 @@ def main():
    check('foreign organization cannot read document',c.get(base+'/'+jid,headers={'Authorization':accounts[1]['Authorization']}).status_code==403)
    check('viewer cannot upload',c.post(base,headers={'Authorization':accounts[2]['Authorization'],'Content-Type':'image/png','Idempotency-Key':str(uuid.uuid4())},content=content).status_code==403)
    if a.crash:
-    env={**os.environ,'SUPABASE_URL':url,'SUPABASE_WORKER_SECRET_KEY':secret,'ANTHROPIC_API_KEY':v['ANTHROPIC_API_KEY'].strip()}
+    env={**os.environ,'SUPABASE_URL':url,'SUPABASE_WORKER_SECRET_KEY':secret,**{k:v[k].strip() for k in ('ANTHROPIC_API_KEY','RUNYOUR_API_KEY') if k in v}}
     # Test-only barrier immediately before the real provider call. Production worker is unchanged.
     script="import time; import backend.extraction as e; from backend.worker import Worker; e.run_model=lambda *a:time.sleep(600); w=Worker(); w.process(w.rpc('passo_claim_document')[0])"
     log=(a.output/'interrupted-worker.log').open('w')

@@ -5,7 +5,7 @@ passo 1단계 문서 추출 측정
 -----------
 run_baseline.py는 기존 core/llm.py의 extract → ask_json → spread를 그대로 실행한다.
 app.py, engine.ingest, core.db는 실행하지 않는다. .env를 읽지 않고 DB 모듈을
-차단 스텁으로 대체한다. API 클라이언트는 api.anthropic.com HTTPS만 허용하고
+차단 스텁으로 대체한다. API 클라이언트는 고른 AI 주소(RUNYOUR_API_KEY가 있으면 api.runyour.ai, 없으면 api.anthropic.com)의 HTTPS만 허용하고
 환경 프록시, 임의 base URL, 자동 재시도를 사용하지 않는다.
 이는 DB/모듈 수준 격리이며 OS 컨테이너 보안 경계는 아니다. 별도 venv로 의존성을 분리한다.
 기존 eval.grade는 Supabase 테넌트를 생성/삭제하므로 이 목적에 실행하지 않는다.
@@ -22,9 +22,9 @@ app.py, engine.ingest, core.db는 실행하지 않는다. .env를 읽지 않고 
     python3 -m venv /tmp/passo-eval-venv
     /tmp/passo-eval-venv/bin/python -m pip install anthropic==2.3.0 requests==2.34.2 pillow==13.0.0 httpx2==2.16.0
 
-API 키는 터미널에서 환경변수 ANTHROPIC_API_KEY로 설정한다. 채팅이나 파일에 적지 않는다.
+API 키는 터미널에서 환경변수 ANTHROPIC_API_KEY(Runyour를 거치려면 RUNYOUR_API_KEY)로 설정한다. 채팅이나 파일에 적지 않는다.
 스크립트는 .env에서 키를 자동으로 가져오지 않는다. 사용자가 승인한 서비스의 .env에서
-ANTHROPIC_API_KEY 항목만 읽어 자식 프로세스 환경변수로 전달할 수 있다.
+ANTHROPIC_API_KEY·RUNYOUR_API_KEY 항목만 읽어 자식 프로세스 환경변수로 전달할 수 있다.
 키를 명령줄 인자, 로그, 결과 파일에 기록하지 않는다.
 아래는 기존 기본 모델 Sonnet 5.5 한 장을 실행하는 예다. 모델 사용 권한과 실행 시점 가격을 확인한다.
 2026-11-13 공식 모델 개요: https://platform.claude.com/docs/en/models/overview

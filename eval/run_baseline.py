@@ -103,8 +103,8 @@ def main():
         ap.error('limit, max-output-tokens and timeout must be positive')
     if a.live and (not a.model or a.input_usd_per_million is None or a.output_usd_per_million is None):
         ap.error('--live requires model and both user-verified USD rates')
-    if a.live and not os.environ.get('ANTHROPIC_API_KEY'):
-        ap.error('Set ANTHROPIC_API_KEY in environment; .env is deliberately not read')
+    if a.live and not (os.environ.get('RUNYOUR_API_KEY') or os.environ.get('ANTHROPIC_API_KEY')):
+        ap.error('Set RUNYOUR_API_KEY or ANTHROPIC_API_KEY in environment; .env is deliberately not read')
     # Also support direct script invocation when importing the fixture builder.
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
@@ -134,20 +134,22 @@ def main():
     import anthropic
     import httpx2 as httpx
     from importlib.metadata import version
+    from urllib.parse import urlsplit
     report['packages'] = {n: version(n) for n in ('anthropic', 'httpx2', 'Pillow', 'requests')}
     llm = isolated_llm()
     # Explicit host and no environment proxies/base URL. Retries disabled to avoid hidden duplicate costs.
+    conn = {'base_url': 'https://api.anthropic.com', **llm.connect(os.environ)}
+    host = report['endpoint'] = urlsplit(conn['base_url']).hostname
     class Transport(httpx.BaseTransport):
         def __init__(self):
             self.inner = httpx.HTTPTransport(retries=0)
         def handle_request(self, request):
-            if request.url.scheme != 'https' or request.url.host != 'api.anthropic.com' or request.url.port not in (None, 443):
-                raise RuntimeError('Only Anthropic HTTPS endpoint is allowed')
+            if request.url.scheme != 'https' or request.url.host != host or request.url.port not in (None, 443):
+                raise RuntimeError('Only the selected AI HTTPS endpoint is allowed')
             return self.inner.handle_request(request)
         def close(self):
             self.inner.close()
-    client = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'],
-        base_url='https://api.anthropic.com', max_retries=0, timeout=a.timeout,
+    client = anthropic.Anthropic(**{**conn, 'max_retries': 0, 'timeout': a.timeout},
         http_client=httpx.Client(transport=Transport(), trust_env=False, timeout=a.timeout))
     llm.client = lambda: client
     # Keep original prompts/schema/thinking/spread; instrument transport boundary, including parse failures.

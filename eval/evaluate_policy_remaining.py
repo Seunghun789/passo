@@ -96,14 +96,14 @@ def live(manifest):
     from core.cell_policy import normalize_cell,cells_match
     # Explicitly selected existing key; never serialize credentials or full transport errors.
     env=dict(line.split('=',1) for line in (ROOT/'.env').read_text().splitlines() if '=' in line and not line.startswith('#'))
-    key=os.environ.get('ANTHROPIC_API_KEY') or env['ANTHROPIC_API_KEY'].strip()
     model='claude-sonnet-5-5'
     report={'model':model,'started_at':datetime.now(timezone.utc).isoformat(),'cases':[], 'usage':[],
             'manifest_sha256':hashlib.sha256((OUT/'fixtures.json').read_bytes()).hexdigest(),
             'prompt_code_sha256':hashlib.sha256((ROOT/'core/llm.py').read_bytes()).hexdigest(),
             'limitations':['synthetic printed images, not handwriting','not independent blind validation','unreadable/ambiguous image gold needs human review','no full upload/OCR/auto-confirmation execution']}
     llm=isolated_llm()
-    client=anthropic.Anthropic(api_key=key,base_url='https://api.anthropic.com',max_retries=0,timeout=120,
+    conn={'base_url':'https://api.anthropic.com',**llm.connect({**env,**os.environ})}
+    client=anthropic.Anthropic(**{**conn,'max_retries':0,'timeout':120},
                               http_client=httpx.Client(trust_env=False,timeout=120))
     llm.client=lambda:client
     llm.log=lambda t,model,prompt,answer,usage_in,usage_out,started=None,**kw:report['usage'].append({'input':usage_in,'output':usage_out})
