@@ -40,10 +40,10 @@ export default function Settings({request}:{request:Request}){
     <button className="primary" disabled={busy} onClick={async()=>{const r=await act('invites',{role},'초대 링크를 만들었어요. 7일 동안 쓸 수 있어요.');if(r)setLink(`${location.origin}/invite/${r.token}`);}}>초대</button>
     {link&&<div className="invite-link"><input readOnly value={link} aria-label="초대 링크" onFocus={e=>e.currentTarget.select()}/><button onClick={()=>navigator.clipboard?.writeText(link).then(()=>setNotice('링크를 복사했어요.'))}>복사</button></div>}</div>}
    <div className="tabs" role="tablist">{['구성원',...(owner?['초대 링크']:[])].map(t=><button role="tab" key={t} aria-selected={tab===t} onClick={()=>setTab(t)}>{t==='구성원'?`구성원 ${data.members.length}`:`초대 링크 ${data.invites.length}`}</button>)}</div>
-   {tab==='구성원'&&<div className="table-wrap"><table className="plain-table"><thead><tr><th>이름</th><th>이메일</th><th>역할</th><th>마지막으로 연 날</th></tr></thead>
+   {tab==='구성원'&&<div className="table-wrap"><table className="plain-table"><thead><tr><th>이름</th><th>이메일</th><th>역할</th><th>마지막으로 연 날</th>{owner&&<th></th>}</tr></thead>
     <tbody>{data.members.map(m=><tr key={m.user_id}><td><b>{m.name||'이름 없음'}</b>{m.me&&<small className="muted"> · 나</small>}</td><td>{m.email||'—'}</td>
      <td>{owner&&m.role!=='주인'?<select aria-label={`${m.name} 역할`} value={m.role} disabled={busy} onChange={e=>act(`members/${m.user_id}`,{role:e.target.value},`${m.name}의 역할을 바꿨어요.`)}>{ROLES.map(r=><option key={r}>{r}</option>)}</select>:m.role}</td>
-     <td>{day(m.last_opened_at)}</td></tr>)}</tbody></table></div>}
+     <td>{day(m.last_opened_at)}</td>{owner&&<td>{m.role!=='주인'&&<button className="text-button" disabled={busy} onClick={()=>{if(confirm(`${m.name}을(를) 이 워크스페이스에서 내보낼까요? 올린 종이와 기록은 남아요.`))act(`members/${m.user_id}/remove`,{},`${m.name}을(를) 내보냈어요.`);}}>내보내기</button>}</td>}</tr>)}</tbody></table></div>}
    {tab==='초대 링크'&&owner&&<div className="table-wrap"><table className="plain-table"><thead><tr><th>역할</th><th>만든 날</th><th>끝나는 날</th><th>상태</th></tr></thead>
     <tbody>{data.invites.map(v=><tr key={v.token}><td>{v.role}</td><td>{day(v.created_at)}</td><td>{day(v.expires_at)}</td>
      <td>{v.used_by?`${v.used_by} 참여`:new Date(v.expires_at)<new Date()?'기간 지남':<button className="text-button" onClick={()=>{const l=`${location.origin}/invite/${v.token}`;navigator.clipboard?.writeText(l).then(()=>setNotice('링크를 복사했어요.'));}}>링크 복사</button>}</td></tr>)}</tbody></table></div>}

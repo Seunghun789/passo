@@ -61,5 +61,9 @@ export async function accountCases({db,as,denied,check,uid}) {
  await as(41,"select public.passo_me_update('예전 사람2','old2@example.com','010-1234-5678')");
  check('account saved',(await as(41,'select * from public.passo_me()'))[0].phone==='010-1234-5678');
  await denied('bad email refused',()=>as(41,"select public.passo_me_update('a','not-an-email','')"));
+ await denied('member cannot remove others',()=>as(41,'select public.passo_member_remove($1,$2)',[t1,me40]));
+ await denied('owner cannot be removed',()=>as(40,'select public.passo_member_remove($1,$2)',[t1,me40]));
+ await as(40,'select public.passo_member_remove($1,$2)',[t1,uid41]);
+ check('[내보내기] removes the workspace from that person',(await as(41,'select id from public.passo_workspaces()')).every(w=>w.id!==t1));
  await denied('foreign workspace info hidden',()=>as(2,'select public.passo_workspace_info($1)',[t1]));
 }

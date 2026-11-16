@@ -46,6 +46,8 @@ Render에는 무료 백그라운드 워커가 없어서, 워커는 지금 Mac의
   - `SUPABASE_STORAGE_SECRET_KEY`: `sb_secret_`로 시작하는 키(원본 사진을 서버에서만 꺼낼 때 쓴다)
   - `RUNYOUR_API_KEY`: Runyour 키
   - `TZ`: `Asia/Seoul`(파일에 들어 있다. "오늘"을 한국 날짜로 센다)
+  - `SUPABASE_SECRET_KEY`: `sb_secret_`로 시작하는 키(관리 화면이 모든 워크스페이스를 셀 때만 쓴다)
+  - `ADMIN_EMAILS`: 관리 화면을 볼 사람의 로그인 메일(여럿이면 쉼표로)
 - [ ] Manual Deploy를 누르고, 주소 뒤에 `/healthz`를 붙여 열었을 때 응답이 오는지 본다.
 - [ ] 생긴 주소(예: `https://passo-dev-api.onrender.com`)를 적어 둔다.
 
@@ -55,13 +57,18 @@ Render에는 무료 백그라운드 워커가 없어서, 워커는 지금 Mac의
 - [ ] Environment Variables에 값을 넣는다.
   - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`: Render와 같은 값
   - `PASSO_API_URL`: 위에서 적어 둔 Render 주소
-  - `PASSO_SITE_URL`: Vercel이 준 웹 주소(예: `https://passo.vercel.app`)
+  - `PASSO_SITE_URL`: Vercel이 준 웹 주소(예: `https://passo.vercel.app`). 회원가입 · 비밀번호 찾기 · Google · 카카오 로그인이 이 주소로 돌아온다
+  - `PASSO_KAKAO`: 카카오 로그인을 켤 때만 `on`
 - [ ] 배포한다.
 
 ### Supabase (로그인 주소)
 
 - [ ] Authentication → URL Configuration의 Site URL을 Vercel 웹 주소로 바꾼다.
-- [ ] Redirect URLs에 `https://(웹 주소)/auth/callback`을 더한다. 빠지면 Google 로그인 뒤 돌아오지 못한다.
+- [ ] Redirect URLs에 `https://(웹 주소)/auth/callback`을 더한다. 빠지면 Google 로그인 · 가입 확인 메일 · 비밀번호 찾기 뒤 돌아오지 못한다.
+- [ ] Authentication → Providers → Email에서 "Confirm email"을 켠 채로 둔다(메일 확인을 마친 사람만 기록에 잇는다).
+- [ ] 무료 Supabase의 기본 메일은 한 시간에 몇 통만 보낸다. 사용자 테스트 전에 Authentication → SMTP에 메일 서비스를 연결한다.
+- [ ] 카카오 로그인을 쓸 때: Kakao Developers에서 앱을 만들고, Supabase Authentication → Providers → Kakao에 REST API 키 · Client Secret을 넣는다.
+- [ ] SQL 편집기에서 `db/migrations/018_undo_edits_and_cut.sql`과 `020_member_remove.sql`을 한 번씩 실행한다([끊기] · [되돌리기] · [내보내기]).
 
 ### 워커
 

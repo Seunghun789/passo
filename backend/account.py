@@ -106,6 +106,13 @@ def install_routes(app, session, gateway):
         await g.rpc(token, 'passo_member_role', {'tid': tid, 'member': uid, 'new_role': body.role})
         return {'ok': True}
 
+    @app.post('/v1/workspaces/{tid}/members/{uid}/remove')
+    async def member_remove(tid: int, uid: int, token=Depends(session), g=Depends(gateway)):
+        """[내보내기](주인만): 그 사람의 워크스페이스 목록에서 이 워크스페이스가 사라진다."""
+        await g.authorize(token, tid)
+        await g.rpc(token, 'passo_member_remove', {'tid': tid, 'member': uid})
+        return {'ok': True}
+
     @app.post('/v1/workspaces/{tid}/invites', status_code=201)
     async def invite(tid: int, body: Role, token=Depends(session), g=Depends(gateway)):
         """[구성원 초대하기] → 역할 → [초대]: 7일 동안 쓸 수 있는 링크 한 개."""

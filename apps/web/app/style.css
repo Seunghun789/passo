@@ -64,3 +64,8 @@
 .settings-block{margin:0 0 18px}.settings-form{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}.settings-form input:disabled{opacity:.7}
 .invite-box{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:10px 0}.invite-box label{font-size:13px}.invite-link{display:flex;gap:8px;flex:1 1 100%}.invite-link input{background:white}
 .form-actions{grid-column:1/-1;display:flex;justify-content:flex-end}.invite-link button{white-space:nowrap;flex:none}
+.admin .bar,.admin-funnel .bar{height:6px;background:#f0f0f2;border-radius:3px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:var(--accent)}
+.admin-hero{display:grid;gap:4px;text-decoration:none;margin:16px 0}.admin-hero strong{font-size:40px;font-weight:400}.admin-hero em{font-style:normal;color:var(--accent);font-size:13px}
+.admin-funnel{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.admin-funnel strong{display:block;font-size:26px;font-weight:400}.admin .segments .button{min-height:30px;border:0;border-radius:0}.admin .segments .button[aria-pressed=true]{background:var(--accent-bg);color:var(--accent)}
+.sidebar nav .nav-link{display:flex;width:100%;min-height:30px;padding:4px 12px;border-radius:8px;text-decoration:none}.sidebar nav .nav-link:hover{background:#ececee}
+@media(max-width:768px){.admin-funnel{grid-template-columns:1fr 1fr}}

@@ -21,5 +21,9 @@ services:
         sync: false
       - key: TZ
         value: Asia/Seoul
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
 # Render has no free background worker. Run `docker compose up -d worker`
 # on the Mac; the worker consumes the durable Supabase queue over HTTPS.

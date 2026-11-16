@@ -54,6 +54,7 @@ try {
  await db.exec(await readFile('db/migrations/017_user_edit_cards.sql','utf8'));
  await db.exec(await readFile('db/migrations/018_undo_edits_and_cut.sql','utf8'));
  await db.exec(await readFile('db/migrations/019_accounts_and_members.sql','utf8'));
+ await db.exec(await readFile('db/migrations/020_member_remove.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);

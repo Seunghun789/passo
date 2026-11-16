@@ -3450,7 +3450,8 @@ def admin_overview(skip=()):
     records = mine(_rows("records", "tenant_id,created_at", status="eq.확정"))
     fixed = mine(_rows("proposals", "tenant_id", kind='in.("애매한 값","읽은 값")', status="eq.고침"))
     asks = mine(_rows("ai_logs", "tenant_id,created_at", prompt="like.[묻기]*"))
-    reads = mine(_rows("ai_logs", "tenant_id,cost_usd", prompt="like.[사진 *", created_at=f"gte.{month}"))
+    reads = mine(_rows("ai_logs", "tenant_id,cost_usd", created_at=f"gte.{month}",  # 사진 읽기(예전 앱) · 워커의 읽기
+                       **{"or": "(prompt.like.[사진 *,prompt.like.[워커 읽기]*)"}))
     spent = mine(_rows("ai_logs", "tenant_id,cost_usd", created_at=f"gte.{month}"))
     built = mine(_rows("widgets", "tenant_id,created_at", status="eq.올림")) + mine(_rows("automations", "tenant_id,created_at", status="eq.켜짐"))
 
