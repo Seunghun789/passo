@@ -8,6 +8,8 @@ export default async function Home({searchParams}:{searchParams:Promise<{workspa
  if(!configured()) redirect('/login');
  const params=await searchParams;
  const workspaces=await api('/v1/workspaces');
+ // The API orders accessible spaces by this account's last actual visit.
+ if(!params.workspace&&workspaces.length) redirect(`/?workspace=${workspaces[0].id}&view=home`);
  const selected=workspaces.find((w:{id:number})=>String(w.id)===params.workspace)??(!params.workspace?workspaces[0]:undefined);
  const sb=await supabase();const {data:{user}}=await sb.auth.getUser();
  const period=['오늘','이번 주','이번 달','올해'].includes(params.period||'')?params.period!:'이번 주';

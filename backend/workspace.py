@@ -74,6 +74,11 @@ class ReadAnswer(Revision):
 
 
 def install_routes(app, session, gateway):
+    @app.post('/v1/workspaces/{tid}/opened')
+    async def opened(tid: int, token=Depends(session), g=Depends(gateway)):
+        await g.authorize(token, tid)
+        return await g.rpc(token, 'passo_open_workspace', {'tid':tid})
+
     @app.get('/v1/workspaces/{tid}/audit')
     async def audit(tid: int, after: int=Query(0,ge=0), token=Depends(session), g=Depends(gateway)):
         await g.authorize(token,tid)

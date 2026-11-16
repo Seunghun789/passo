@@ -43,7 +43,8 @@ class Worker:
         try:
             source = self.request('GET','/rest/v1/source_inputs',params={'id':f"eq.{job['source_input_id']}",
                 'tenant_id':f"eq.{job['tenant_id']}",'select':'storage_path'}).json()[0]
-            content = self.request('GET','/storage/v1/object/authenticated/passo-originals/'+source['storage_path']).content
+            bucket = job.get('original_bucket', 'passo-originals')
+            content = self.request('GET','/storage/v1/object/authenticated/'+bucket+'/'+source['storage_path']).content
             if hashlib.sha256(content).hexdigest()!=job['sha256'] or len(content)!=job['byte_size']:
                 raise ValueError('original_hash_mismatch')
             from backend.documents import validate_document
@@ -54,7 +55,7 @@ class Worker:
             if 'ocr' not in state:
                 state['ocr'] = run_ocr(content,job['media_type']);save(state)
             if 'extraction' not in state:
-                state['extraction'] = run_model(content,job['media_type']);save(state)
+                state['extraction'] = run_model(content,job['media_type'],job.get('model_id'));save(state)
             payload = make_payload(state['extraction']['sheet'],state['ocr'])
             if lost.is_set() or not self.rpc('passo_worker_finish',{**args,'payload':payload}):
                 raise RuntimeError('lease_lost')

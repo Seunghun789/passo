@@ -37,17 +37,20 @@ def run_ocr(content, mime):
     return {str(n):ocr.lines(page_image(content,mime,n)) for n in range(1,pages+1)}
 
 
-def run_model(content, mime):
+def run_model(content, mime, model=None):
     import anthropic
     import httpx2
-    from core.llm import extract, DEFAULT
+    from core.llm import extract, DEFAULT, MODELS
+    selected = model or os.environ.get('PASSO_MODEL', DEFAULT)
+    if selected not in MODELS:
+        raise ValueError('unsupported_model')
     usage = {}
     def sink(t, model, prompt, answer, usage_in, usage_out, started):
         usage.update(model=model,input_tokens=usage_in,output_tokens=usage_out,seconds=round(time.monotonic()-started,3))
     # Explicit transport: use authorized provider key, no implicit retries or proxy.
     with anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'],base_url='https://api.anthropic.com',
         max_retries=0,timeout=180,http_client=httpx2.Client(trust_env=False,timeout=180)) as client:
-        sheet = extract(None,os.environ.get('PASSO_MODEL',DEFAULT),'original.pdf' if mime=='application/pdf' else 'original.png',
+        sheet = extract(None,selected,'original.pdf' if mime=='application/pdf' else 'original.png',
                         content,api_client=client,log_sink=sink)
     return {'sheet':sheet,'usage':usage}
 
