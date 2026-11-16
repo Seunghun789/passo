@@ -31,7 +31,8 @@ class Gateway:
         return r
 
     async def rpc(self, token, name, body=None):
-        return (await self.request(token, 'POST', '/rest/v1/rpc/' + name, json=body or {})).json()
+        r = await self.request(token, 'POST', '/rest/v1/rpc/' + name, json=body or {})
+        return r.json() if r.content else None  # returns void 함수는 빈 본문(204)을 돌려준다
 
     async def authenticate(self, token):
         try:

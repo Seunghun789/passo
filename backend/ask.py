@@ -98,6 +98,6 @@ def install_routes(app, session, gateway):
                 await g.rpc(token, 'passo_log_ai', {'tid': tid, 'model': usage['model'], 'prompt': usage['prompt'],
                     'answer': usage['answer'], 'input_tokens': usage['input_tokens'], 'output_tokens': usage['output_tokens'],
                     'cost_usd': round(cost, 6), 'duration_ms': round((time.monotonic() - started) * 1000)})
-            except HTTPException:
+            except (HTTPException, ValueError):
                 print('{"ask":"usage_log_failed"}', flush=True)
         return result
