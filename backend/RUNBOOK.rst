@@ -3,12 +3,23 @@ passo 인증·조직 격리 기반 (2026-11-13)
 
 적용 상태
 ---------
-현재 Supabase 프로젝트 dubxkjwglefkaidhktkc에 migration 001~008 적용.
+현재 Supabase 프로젝트 dubxkjwglefkaidhktkc에 migration 001~010 적용.
 001은 Browser URL 길이 제한 때문에 5개 명시적 트랜잭션으로 나누어 적용했다.
 002는 기존 함수 정의의 오류 코드 40001만 PT409로 치환했다.
-재설치 시 schema.sql 이후 001~008을 번호 순서로 실행한다.
+재설치 시 schema.sql 이후 001~010을 번호 순서로 실행한다.
 001은 재실행용이 아니며 기존 정책이 있으면 의도적으로 실패한다.
 적용 증거와 검증 결과는 artifacts/auth-policy-20261113/review.html에 있다.
+
+2026-11-16에 누락된 009와 010을 한 트랜잭션으로 적용했다. 실제 DB 권한·구조
+9개, 로컬 PGlite 225개, 실제 Auth/API/Storage/워커/웹 검증 20개를 통과했다.
+기존 업무 데이터 10개 표의 전후 행 수와 SHA-256이 같고 임시 계정·문서는 정리했다.
+워커는 원래 저장소에서 ``docker compose -p passo up -d --no-build worker``로
+실행한 passo-worker-1이다. 이미지 76f08c070ac5는 코드 커밋 60baf89와 일치한다.
+이전 clone-goal 워커는 중지하고 재시작 정책을 no로 바꾸었다.
+로컬 웹·API는 3001/8003에서 검증했으며 Vercel·Render는 이번에 배포하지 않았다.
+재읽기는 합성 추출 checkpoint로 워커의 실제 파일 읽기·결과 반영을 검증했다.
+실제 OCR·모델 공급자 호출은 이번 검증에 포함하지 않는다.
+상세 증거: artifacts/db-worker-20261116/review.html.
 
 구조 확인 화면 이관 (008)
 ------------------------

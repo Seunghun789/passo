@@ -56,3 +56,7 @@ node_modules/
 /artifacts/
 .env.*
 !.env.example
+
+#
+.env.worker
+.env.api
