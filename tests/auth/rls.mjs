@@ -51,6 +51,8 @@ try {
  await db.exec(await readFile('db/migrations/014_chats_and_rule_proposals.sql','utf8'));
  await db.exec(await readFile('db/migrations/015_entity_registration.sql','utf8'));
  await db.exec(await readFile('db/migrations/016_link_proposals.sql','utf8'));
+ await db.exec(await readFile('db/migrations/017_user_edit_cards.sql','utf8'));
+ await db.exec(await readFile('db/migrations/018_undo_edits_and_cut.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);
@@ -128,6 +130,8 @@ try {
  await (await import('../documents/chats-cases.mjs')).chatsCases({db,as,denied,check,uid});
  await (await import('../documents/entity-cases.mjs')).entityCases({db,as,denied,check,uid});
  await (await import('../documents/link-cases.mjs')).linkCases({db,as,denied,check,uid});
+ await (await import('../documents/edit-cases.mjs')).editCases({db,as,denied,check,uid});
+ await (await import('../documents/undo-cases.mjs')).undoCases({db,as,denied,check,uid});
  await db.exec("update public.memberships set role='확인하는 사람' where user_id=3");
  check('role promotion visible on same token',(await as(3,"select public.passo_access(1,'review') as allowed"))[0].allowed===true);
  await db.exec("update public.memberships set role='보는 사람' where user_id=3");

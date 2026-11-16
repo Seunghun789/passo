@@ -82,6 +82,9 @@ def main():
    if time.monotonic()>end:raise TimeoutError('worker')
    time.sleep(3)
   check('worker reads the paper',len(d['records'])>=3,rows=len(d['records']),seconds=round(time.monotonic()-started,1))
+  logs=ok(sb('GET','/rest/v1/ai_logs',params={'tenant_id':f'eq.{tid}','prompt':'like.[워커*','select':'prompt,model,input_tokens,cost_usd'}))
+  check('worker AI calls are recorded',any(l['prompt'].startswith('[워커 읽기]') for l in logs) and any(l['prompt'].startswith('[워커 구조]') for l in logs),
+   calls=[l['prompt'].split(']')[0]+']' for l in logs],cost=round(sum(float(l['cost_usd']) for l in logs),4))
   classes=ok(sb('GET','/rest/v1/object_types',params={'tenant_id':f'eq.{tid}','kind':'eq.대상','select':'name'}))
   refs=ok(sb('GET','/rest/v1/property_defs',params={'tenant_id':f'eq.{tid}','ref_class':'not.is.null','select':'type_name,name,ref_class'}))
   ents=ok(sb('GET','/rest/v1/entities',params={'tenant_id':f'eq.{tid}','select':'id,class_name,name'}))
@@ -110,6 +113,24 @@ def main():
   ok(c.post(base+f'/reviews/{p["id"]}',headers=owner,json={'expected_payload':p['payload'],'answer':'accept'}))
   g=ok(c.get(base+'/graph',headers=owner))
   check('[맞아요] turns it into a confirmed link',len(g['links'])>=1 and not any(x['id']==p['id'] for x in g['pending']),links=[l['text'] for l in g['links']])
+  # 직접 고친 것: 카드로 올라가고 [적용] 때만 반영된다
+  q=ok(c.post(base+'/edits',headers=owner,json={'kind':'대상 속성','payload':{'class':C,'attr':'단가','dtype':'number'}}))['id']
+  check('edit waits as a card until applied',not any(a=='단가' for a in ok(c.get(base+'/entities',headers=owner))['classes'][[x['name'] for x in table['classes']].index(C)]['attrs'])
+   and any(x['id']==q for x in ok(c.get(base+'/entities',headers=owner))['cards']))
+  check('viewer cannot apply an edit card',c.post(base+f'/edits/{q}',headers=viewer,json={'ok':True}).status_code==403)
+  ok(c.post(base+f'/edits/{q}',headers=owner,json={'ok':True}))
+  ents2=ok(c.get(base+'/entities',headers=owner));cls=next(x for x in ents2['classes'] if x['name']==C)
+  check('[적용] adds the attribute to the class table',cls['attrs']==['단가'])
+  check('bad edit is explained',c.post(base+'/edits',headers=owner,json={'kind':'속성 값','payload':{'entity_id':cls['rows'][0]['id'],'attr':'없는 정보','new':1}}).json().get('detail','').startswith('그 분류에 없는 정보'))
+  q2=ok(c.post(base+'/edits',headers=owner,json={'kind':'속성 값','payload':{'entity_id':cls['rows'][0]['id'],'attr':'단가','new':1200}}))['id']
+  ok(c.post(base+f'/edits/{q2}',headers=owner,json={'ok':True}))
+  cls=next(x for x in ok(c.get(base+'/entities',headers=owner))['classes'] if x['name']==C)
+  check('attribute value applied',cls['rows'][0]['attrs']['단가']==1200)
+  q3=ok(c.post(base+'/edits',headers=owner,json={'kind':'칸 설정','payload':{'type':T,'op':'단위·설명','prop':nums[0].split('.',1)[1],'unit':'개','description':'직접 단 설명'}}))['id']
+  ok(c.post(base+f'/edits/{q3}',headers=owner,json={'ok':True}))
+  g=ok(c.get(base+'/graph',headers=owner))
+  check('unit and description applied to the column',next(x for x in g['props'][T] if x['name']==nums[0].split('.',1)[1])['description']=='직접 단 설명')
+  check('applied edits are listed for undo',len(ok(c.get(base+'/entities',headers=owner))['undoable'])>=2)
   from playwright.sync_api import sync_playwright
   with sync_playwright() as pw:
    browser=pw.chromium.launch();page=browser.new_page(viewport={'width':1440,'height':1050})
@@ -119,7 +140,8 @@ def main():
    page.get_by_role('tab',name=C).click()
    page.get_by_text(spaced,exact=False).first.wait_for(timeout=10000)
    page.screenshot(path=str(a.output/'entities.png'),full_page=True)
-   check('browser entity tab lists entities with aliases',page.locator('.entity-table tbody tr').count()>=3,rows=page.locator('.entity-table tbody tr').count())
+   want=len([e for e in ents if e['class_name']==C])
+   check('browser entity tab lists entities with aliases',page.locator('.entity-table tbody tr').count()==want,rows=page.locator('.entity-table tbody tr').count(),want=want)
    page.goto(a.web+f'/?workspace={tid}&view=graph');page.locator('.graph canvas').wait_for(timeout=60000)
    page.get_by_label('점 고르기').select_option(f'C:{C}');page.locator('.node-card').wait_for(timeout=10000)
    check('browser graph draws and opens a node card',page.locator('.graph canvas').count()==1 and C in page.locator('.node-card').inner_text())

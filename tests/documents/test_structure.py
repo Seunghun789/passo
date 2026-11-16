@@ -76,3 +76,32 @@ def test_type_name_never_collides_with_entity_class(monkeypatch):
     fetch, _ = tables(object_types=[{'name': '품목', 'kind': '대상', 'parent_name': None, 'trust': None}])
     out, _ = run(fetch, {'type_name': '품목', 'props': [], 'links': []}, monkeypatch)
     assert out['type'] == '품목 기록'
+
+
+def test_range_columns_split_into_low_and_high(monkeypatch):
+    from backend import structure
+    from core import llm
+    from core.record_cells import decode_record, encode_record
+    reads = {'26~32': {'low': 26, 'high': 32}, '5,210 ±10%': {'base': 5210, 'pct': 10}}
+    monkeypatch.setattr(llm, 'read_ranges', lambda t, label, values: [{'written': v, **reads[v]} for v in values])
+    plan = {'props': [{'label': '온도 범위', 'split': {'low': '온도 아래', 'high': '온도 위'}}, {'label': '무게', 'split': {'low': '무게 아래', 'high': '무게 위'}}]}
+    rows = [{'온도 범위': '26~32', '무게': '5,210 ±10%'}]
+    splits = structure.plan_ranges(None, plan, rows)
+    assert splits['온도 범위'] == {'low': '온도 아래', 'high': '온도 위', 'ranges': {'26~32': [26, 32]}}
+    assert splits['무게']['ranges']['5,210 ±10%'] == [4689.0, 5731.0]
+    payload = {'records': [{'data': encode_record({'data': {'온도 범위': '26~32', '설비': 'P-03', '무게': '-'}})['data'], 'uncertain': ['온도 범위']}],
+               'spans': {'온도 범위': [{'rec': 0}]}}
+    structure.apply_splits(payload, splits)
+    data = decode_record({'data': payload['records'][0]['data']})['data']
+    assert data['온도 아래'] == '26' and data['온도 위'] == '32' and '온도 범위' not in data and data['무게'] == '-'  # 빈 값 · '-'는 나누지 않는다
+    assert payload['records'][0]['uncertain'] == ['온도 아래', '온도 위'] and payload['spans']['온도 위'] == [{'rec': 0}]
+    structure.apply_splits(payload, splits)  # 두 번 불러도 같다
+    assert decode_record({'data': payload['records'][0]['data']})['data']['온도 아래'] == '26'
+
+
+def test_range_not_split_when_any_value_fails(monkeypatch):
+    from backend import structure
+    from core import llm
+    monkeypatch.setattr(llm, 'read_ranges', lambda t, label, values: [{'written': '26~32', 'low': 26, 'high': 99}, {'written': '약 30'}])
+    plan = {'props': [{'label': '온도', 'split': {'low': '아래', 'high': '위'}}]}
+    assert structure.plan_ranges(None, plan, [{'온도': '26~32'}, {'온도': '약 30'}]) == {}  # 적히지 않은 숫자(99)와 못 읽은 값

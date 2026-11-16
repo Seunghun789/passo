@@ -116,3 +116,20 @@ def test_worker_uses_selected_model_and_legacy_original(monkeypatch):
                'media_type':'image/png', 'model_id':'claude-opus-5-5', 'original_bucket':'uploads'})
     assert calls == ['passo_worker_save', 'model', 'passo_worker_save', 'structure', 'passo_worker_save',
                      'entities', 'passo_worker_save', 'passo_worker_finish']
+
+
+def test_worker_logs_ai_usage_without_paper_content():
+    posted = []
+    w = Worker.__new__(Worker)
+    w.request = lambda method, path, **kw: posted.append((method, path, kw['json']))
+    state = {'extraction': {'sheet': {'rows': ['비밀 값']}, 'usage': {'model': 'claude-sonnet-5-5', 'input_tokens': 1000, 'output_tokens': 200, 'seconds': 4.2}},
+             'structure': {'usage': [{'model': 'claude-sonnet-5-5', 'input_tokens': 500, 'output_tokens': 100}]},
+             'entities': {'usage': [{'model': 'claude-haiku-5-5', 'input_tokens': 300, 'output_tokens': 30}, {'model': 'gpt-x', 'input_tokens': 1}]}}
+    w.log_usage({'id': 'job', 'tenant_id': 7, 'source_input_id': 10}, state)
+    method, path, rows = posted[0]
+    assert (method, path) == ('POST', '/rest/v1/ai_logs') and len(rows) == 3
+    assert [r['prompt'] for r in rows] == ['[워커 읽기] 종이 10', '[워커 구조] 종이 10', '[워커 대상] 종이 10']
+    assert rows[0]['duration_ms'] == 4200 and rows[0]['cost_usd'] == 0.004 and all(r['answer'] == '' and r['tenant_id'] == 7 for r in rows)
+    assert '비밀 값' not in str(rows) and len({tuple(sorted(r)) for r in rows}) == 1 and rows[1]['duration_ms'] is None
+    w.request = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('down'))
+    w.log_usage({'id': 'job', 'tenant_id': 7, 'source_input_id': 10}, state)  # 남기지 못해도 멈추지 않는다

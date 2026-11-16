@@ -11,7 +11,8 @@ type CalDay={iso:string,n:number,wd:number,wdk:string,today:boolean,past:boolean
 type View={id?:number,source?:string,shape?:string,type?:string,title:string,kind:'number'|'vega'|'table'|'status'|'list'|'calendar'|'empty',until:string,reason?:string|null,evidence:Table,
  value?:string,previous?:string,previous_label?:string,rule?:string,vega?:Record<string,unknown>,columns?:string[],rows?:Record<string,unknown>[],
  items?:{id?:number,label?:string,value?:string,names?:string[],at?:string,name?:string,side?:string,color?:string}[],more?:number,prop?:string,
- mode?:'week'|'month',offset?:number,label?:string,heads?:string[],days?:CalDay[],legend?:{name:string,color:string}[],message?:string};
+ mode?:'week'|'month',offset?:number,label?:string,heads?:string[],days?:CalDay[],legend?:{name:string,color:string}[],message?:string,
+ write?:{type:string,prop:string,fields:{name:string,dtype:string,unit:string|null}[]}};
 type PickOption={type:string,numbers:string[],groups:string[],dates:string[],values:Record<string,string[]>};
 type ChatRow={id:number,title:string,made:boolean,updated_at:string,deleted_at:string|null,days_left:number|null};
 type ChatMsg={index:number,role:'user'|'assistant',text:string,done:boolean,title?:string,preview?:View|Suggestion,stale?:string};
@@ -87,23 +88,43 @@ function Vega({spec,title}:{spec:Record<string,unknown>,title:string}){
  return failed?<p className="muted">그림을 그리지 못했어요.</p>:<div className="vega" ref={ref} role="img" aria-label={title}/>;
 }
 
+function CalendarWrite({w,day,request,onSaved,onClose}:{w:NonNullable<View['write']>,day:string,request:Request,onSaved:()=>void,onClose:()=>void}){
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),key=useRef(crypto.randomUUID());
+ const d=new Date(day+'T00:00:00'),label=`${d.getMonth()+1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일 · 직접 적기`;
+ async function save(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const f=new FormData(e.currentTarget),data:Record<string,string|number|null>={};
+  for(const x of w.fields){const v=String(f.get(x.name)??'').trim();if(v)data[x.name]=x.dtype==='number'&&Number.isFinite(Number(v))?Number(v):v;}
+  const at=String(f.get('__at')||day),tm=String(f.get('__time')||'');data[w.prop]=tm?`${at} ${tm}`:at;
+  try{await request('manual-records',{method:'POST',body:JSON.stringify({request_key:key.current,type_name:w.type,occurred_at:new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Seoul'}),data})});onSaved();}
+  catch(err){setError((err as Error).message);}finally{setBusy(false);}}
+ return <form className="panel cal-pick cal-write" onSubmit={save}><div className="toolbar"><b>{label}</b><button type="button" className="text-button" onClick={onClose}>닫기</button></div>
+  <p className="muted">{w.type} 칸 그대로 적어요. {w.prop} 날짜는 채워 뒀어요.</p>
+  <div className="pick-form"><label>{w.prop}<input type="date" name="__at" defaultValue={day}/></label><label>시각<input type="time" name="__time" step={1800}/></label>
+   {w.fields.map(x=><label key={x.name}>{x.name}{x.unit?` (${x.unit})`:''}<input name={x.name} type={x.dtype==='date'?'date':'text'} inputMode={x.dtype==='number'?'decimal':undefined} maxLength={1000}/></label>)}</div>
+  {error&&<p className="error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy?'저장 중…':'저장'}</button></form>;
+}
+
 function Calendar({v,tid,request,wid}:{v:View,tid:number,request:Request,wid?:number}){
- const [cal,setCal]=useState(v),[pick,setPick]=useState<number|null>(null),[busy,setBusy]=useState(false);
- useEffect(()=>{setCal(v);setPick(null);},[v]);
- async function move(step:number){if(!wid)return;setBusy(true);try{setCal(await request(`widgets/${wid}/calendar?mode=${cal.mode}&offset=${(cal.offset||0)+step}`));setPick(null);}finally{setBusy(false);}}
+ const [cal,setCal]=useState(v),[pick,setPick]=useState<number|null>(null),[blank,setBlank]=useState<string|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
+ useEffect(()=>{setCal(v);setPick(null);setBlank(null);},[v]);
+ async function reload(step:number){setBusy(true);try{setCal(await request(`widgets/${wid}/calendar?mode=${cal.mode}&offset=${(cal.offset||0)+step}`));}finally{setBusy(false);}}
+ async function move(step:number){if(!wid)return;await reload(step);setPick(null);setBlank(null);}
  const row=pick===null?null:cal.evidence.rows.find(r=>r.id===pick);
  const [back,next]=cal.mode==='week'?['지난주','다음 주']:['지난달','다음 달'];
  return <div className={`calendar ${cal.mode}`}>
   <div className="toolbar cal-head"><b>{cal.label}</b>{wid&&<div className="cal-nav"><button disabled={busy} onClick={()=>move(-1)}>{back}</button><button disabled={busy} onClick={()=>move(1)}>{next}</button></div>}</div>
+  {notice&&<p className="success" role="status">{notice}</p>}
   <div className="cal-grid">{cal.mode==='month'&&cal.heads?.map(h=><div key={h} className={`cal-hd${h==='일'?' sun':''}`}>{h}</div>)}
-   {cal.days?.map(d=><div key={d.iso} className={`cal-day${d.out?' out':''}${d.today?' today':''}${d.past?' past':''}${d.wd===0?' sun':''}`}>
+   {cal.days?.map(d=><div key={d.iso} className={`cal-day${d.out?' out':''}${d.today?' today':''}${d.past?' past':''}${d.wd===0?' sun':''}${blank===d.iso?' on':''}`}
+     onClick={e=>{if(wid&&cal.write&&e.target===e.currentTarget){setBlank(d.iso);setPick(null);setNotice('');}}}>
     <div className="cal-n">{cal.mode==='week'?`${d.n} ${d.wdk}${d.today?' · 오늘':''}`:d.n}</div>
-    {d.events.map(e=><button key={e.id} className={`cal-ev${pick===e.id?' on':''}`} style={{borderLeftColor:e.color}} onClick={()=>setPick(pick===e.id?null:e.id)}>{e.time&&<small>{e.time}</small>}<span>{e.name}</span>{e.side&&<small>{e.side}</small>}</button>)}
+    {d.events.map(e=><button key={e.id} className={`cal-ev${pick===e.id?' on':''}`} style={{borderLeftColor:e.color}} onClick={()=>{setPick(pick===e.id?null:e.id);setBlank(null);}}>{e.time&&<small>{e.time}</small>}<span>{e.name}</span>{e.side&&<small>{e.side}</small>}</button>)}
    </div>)}</div>
   {!!cal.legend?.length&&<div className="cal-legend">{cal.legend.map(l=><span key={l.name}><i style={{background:l.color}}/>{l.name}</span>)}</div>}
+  {wid&&cal.write&&<p className="muted">빈 곳을 누르면 그 날짜로 직접 적을 수 있어요.</p>}
   {row&&<div className="panel cal-pick"><div className="toolbar"><b>{show(row.values[Object.keys(row.values)[0]])}</b><button onClick={()=>setPick(null)}>닫기</button></div>
    <dl>{Object.entries(row.values).map(([k,x])=><Fragment key={k}><dt>{k}</dt><dd>{show(x)}</dd></Fragment>)}</dl>
    {row.source_id&&<img className="evidence-photo" src={`/api/workspaces/${tid}/business/sources/${row.source_id}/original?page=1`} alt="원본 사진"/>}</div>}
+  {blank&&cal.write&&<CalendarWrite w={cal.write} day={blank} request={request} onClose={()=>setBlank(null)} onSaved={async()=>{setBlank(null);await reload(0);setNotice('저장했어요. 달력에 보여요.');}}/>}
  </div>;
 }
 

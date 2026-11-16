@@ -122,11 +122,12 @@ def install_routes(app, session, gateway):
         records, sources, proposals, props, aliases, objects = await asyncio.gather(
             rows(g,token,tid,'records','id,type_name,occurred_at,status,source_input_id',status='eq.확정'),
             rows(g,token,tid,'source_inputs','id,name,channel,created_at,auto,storage_path'),
-            rows(g,token,tid,'proposals','id,kind,status,source_input_id,created_at',status='eq.대기'),
+            rows(g,token,tid,'proposals','id,kind,status,source_input_id,created_at,evidence',status='eq.대기'),
             rows(g,token,tid,'property_defs','id,type_name,name,dtype,unit,position'),
             rows(g,token,tid,'alias_dict','id,type_name,alias,prop_name'),
             rows(g,token,tid,'object_types','id,name,kind'))
-        checks = [p for p in proposals if p['kind'] in CHECK_KINDS]
+        # 사람이 직접 고친 카드는 대상 화면 · 지식그래프에서 [적용]한다. 확인할 것에 세지 않는다
+        checks = [p for p in proposals if p['kind'] in CHECK_KINDS and not (p.get('evidence') or {}).get('user') is True]
         types = list(dict.fromkeys([o['name'] for o in objects if o['kind']=='기록']+[r['type_name'] for r in records]))
         a,b,c,d = period_range(period)
         stats = []
@@ -169,7 +170,8 @@ def install_routes(app, session, gateway):
         items=(await g.request(token,'GET','/rest/v1/proposals',params={'tenant_id':f'eq.{tid}',
             'select':'id,kind,payload,evidence,status,source_input_id,created_at','status':'eq.대기',
             'kind':'in.('+','.join(CHECK_KINDS)+')','id':f'gt.{after}','order':'id.asc','limit':51})).json()
-        return {'items':items[:50],'next':items[49]['id'] if len(items)>50 else None}
+        shown=[q for q in items[:50] if (q.get('evidence') or {}).get('user') is not True]
+        return {'items':shown,'next':items[49]['id'] if len(items)>50 else None}
 
     @app.post('/v1/workspaces/{tid}/reviews/{qid}')
     async def answer(tid: int, qid: int, body: ReviewAnswer, token=Depends(session), g=Depends(gateway)):

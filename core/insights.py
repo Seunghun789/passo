@@ -205,7 +205,11 @@ def calendar_view(K, spec, mode, offset, today=None):
                       "today": d["day"] == today, "past": d["day"] < today, "out": d["out"],
                       "events": [{"id": int(r["_id"]), "time": hm(r["at"]).replace(" ", "") if r["timed"] else "", "name": r["name"],
                                   "side": r["side"], "color": tones.get(r["tone"], "#A1A1AA")} for r in d["events"]]} for d in days],
-            "legend": [{"name": k, "color": c} for k, c in tones.items()]}, ev
+            "legend": [{"name": k, "color": c} for k, c in tones.items()],
+            # 빈 날을 누르면 여는 직접 적기: 그 날짜는 일정 칸에 채우고, 나머지는 기록 종류의 칸 그대로
+            "write": {"type": spec["type"], "prop": spec["prop"],
+                      "fields": [{"name": p["name"], "dtype": p["dtype"], "unit": p.get("unit")}
+                                 for p in K["props"].get(spec["type"], []) if p["name"] not in ("날짜", spec["prop"])]}}, ev
 
 
 def view(K, spec, period="이번 주", cal=None, today=None):

@@ -215,8 +215,22 @@ GET /v1/workspaces/{tid}/graph(entities=true면 [대상까지])는 core/graph의
 016의 passo_link_propose로 '연결' 카드를 올리고, 카드에는 기록으로 센 근거가 붙는다. [맞아요] · [아니요]는 확인 화면과 같은
 POST .../reviews/{qid}다. [끊기](POST .../links/{id}/cut)는 passo_link_cut을 쓴다.
 
-대상 표에서 값 고치기, [정보 더하기] · [별칭 더하기] · [하위 분류로 묶기] · [상위 분류 정하기], 관계 정보,
-점을 눌러 여는 설정 칸, 대상 정보 자동 제안(늘 같은 값인 칸)은 이 단계에 포함하지 않는다.
+사람이 직접 고친 것(대상 정보 값 · [정보 더하기] · [별칭 더하기] · [하위 분류로 묶기] · [상위 분류 정하기] · [관계 정보 올리기],
+지식그래프 칸 점의 [단위·설명 올리기] · [다른 이름 더하기], 기록 종류 점의 [칸 더하기])은 POST .../edits로 바로 쓰지 않고
+"직접 고친 것" 카드로 올린다. core/edits.card가 확정 지식으로 검사하고, 카드에는 켜 둔 자동화 · 올린 지표가 어떻게 바뀌는지
+(engine.impact)가 붙는다. [적용](POST .../edits/{id})은 017의 passo_user_card_answer가 반영하며, 더하거나 고치기만 한다.
+이 카드는 확인 화면의 "확인할 것"에 세지 않는다. 대상 정보 값 · 별칭 · 단위·설명 · 다른 이름은 018의 passo_user_card_undo로
+[되돌리기]한다(POST .../edits/{id}/undo). 칸 이름 · 값의 종류 바꾸기와 기록 종류 · 칸 · 대상 · 분류 확정 되돌리기는 하지 않는다.
+늘 같은 값인 칸을 대상 정보로 옮기자는 제안은 이 단계에 포함하지 않는다.
 
-검증: tests/documents/test_entities.py · test_knowledge.py, entity-cases.mjs · link-cases.mjs(PGlite),
+검증: tests/documents/test_entities.py · test_knowledge.py, entity-cases.mjs · link-cases.mjs · edit-cases.mjs · undo-cases.mjs(PGlite),
 eval/verify_entities_live.py(실제 워커가 종이 한 장을 읽어 대상을 등록하고, API · 브라우저로 대상 표와 지식그래프를 확인한다).
+
+범위 칸 나누기와 워커의 AI 사용 기록
+------------------------------------
+구조를 정할 때 AI가 범위라고 본 칸(예: '26~32', '5,210 ±10%')은 적힌 값마다 작은 모델이 숫자만 옮기고(llm.read_ranges),
+engine.range_of가 계산 · 검사한다. 모든 값이 검사를 넘으면 그 칸을 아래값 · 위값 두 숫자 칸으로 정하고, 워커가 apply_splits로
+기록과 원본 자리도 같이 나눈다(두 칸이 같은 원본 자리를 잇는다). 하나라도 넘지 못하면 한 칸 그대로 둔다.
+
+워커는 종이를 반영한 뒤 그 종이에서 부른 AI(읽기 · 구조 · 대상)를 ai_logs에 남긴다(prompt '[워커 읽기] 종이 N').
+종이 내용과 AI 답은 남기지 않는다. 달력의 빈 날을 누르면 그 날짜를 일정 칸에 채운 직접 적기가 열리고 [저장]하면 달력에 보인다.

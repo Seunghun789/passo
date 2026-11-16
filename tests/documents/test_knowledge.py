@@ -50,6 +50,8 @@ def client(monkeypatch, g, data):
     def open_reader(gateway, token, tid):
         def fetch(table, params):
             rows = data.get(table, [])
+            if params.get('evidence->>user') == 'eq.true':
+                rows = [r for r in rows if (r.get('evidence') or {}).get('user') is True]
             for k in ('status', 'kind'):
                 if params.get(k, '').startswith('eq.'):
                     rows = [r for r in rows if r.get(k) == params[k][3:]]
@@ -113,3 +115,36 @@ def test_user_link_checks_refs_and_existing(monkeypatch):
     assert c.post('/v1/workspaces/7/links', json={'from_ref': '재고 점검.최소', 'to_ref': '재고 점검.수량', 'kind': '최소 기준'}).status_code == 409
     assert c.post('/v1/workspaces/7/links', json={'from_ref': 'a', 'to_ref': 'b', 'kind': '친구'}).status_code == 422
     assert c.post('/v1/workspaces/7/links/4/cut').json() == {'id': 4} and g.calls[-1] == ('passo_link_cut', {'tid': 7, 'link_id': 4})
+
+
+def test_edits_are_checked_and_become_cards(monkeypatch):
+    g = Gateway()
+    data = tables()
+    data['property_defs'].append({'type_name': '품목', 'name': '단가', 'dtype': 'number', 'unit': '원', 'description': None,
+                                  'is_entity': False, 'ref_class': None, 'position': 0})
+    c = client(monkeypatch, g, data)
+    r = c.post('/v1/workspaces/7/edits', json={'kind': '속성 값', 'payload': {'entity_id': 1, 'attr': '없는 정보', 'new': 3}})
+    assert r.status_code == 422 and '정보 더하기' in r.json()['detail']
+    assert c.post('/v1/workspaces/7/edits', json={'kind': '속성 값', 'payload': {'entity_id': 1, 'attr': '단가', 'new': 500}}).status_code == 201
+    name, body = g.calls[-1]
+    assert name == 'passo_user_card' and body['payload'] == {'entity_id': 1, 'entity': '생수', 'class': '품목', 'attr': '단가', 'old': None, 'new': 500}
+    assert c.post('/v1/workspaces/7/edits', json={'kind': '칸 설정', 'payload': {'type': '재고 점검', 'op': '단위·설명', 'prop': '수량', 'unit': 'EA', 'description': '창고 수량'}}).status_code == 201
+    assert g.calls[-1][1]['payload']['old_unit'] == '개'
+    assert c.post('/v1/workspaces/7/edits', json={'kind': '칸 설정', 'payload': {'type': '재고 점검', 'op': '칸 더하기', 'name': '수량'}}).status_code == 422
+    assert c.post('/v1/workspaces/7/edits', json={'kind': '상위 분류', 'payload': {'class': '품목', 'parent': '품목'}}).status_code == 422
+    assert c.post('/v1/workspaces/7/edits', json={'kind': '종류', 'payload': {}}).status_code == 422
+    assert c.post('/v1/workspaces/7/edits/31', json={'ok': True}).status_code == 200 and g.calls[-1] == ('passo_user_card_answer', {'tid': 7, 'qid': 31, 'ok': True})
+    viewer = Gateway(ops=('read',))
+    assert client(monkeypatch, viewer, data).post('/v1/workspaces/7/edits', json={'kind': '대상 속성', 'payload': {'class': '품목', 'attr': 'x'}}).status_code == 403
+
+
+def test_pending_cards_show_impact(monkeypatch):
+    data = tables()
+    data['property_defs'].append({'type_name': '품목', 'name': '최소', 'dtype': 'number', 'unit': None, 'description': None,
+                                  'is_entity': False, 'ref_class': None, 'position': 0})
+    spec = {'title': '최소 미달', 'type': '재고 점검', 'scope': 'all', 'conditions': [{'prop': '수량', 'op': '<', 'value': None, 'value_prop': '품목.최소'}]}
+    data['automations'] = [{'id': 1, 'spec': spec, 'status': '켜짐'}]
+    data['proposals'].append({'id': 40, 'kind': '속성 값', 'status': '대기', 'evidence': {'user': True},
+                              'payload': {'entity_id': 1, 'entity': '생수', 'class': '품목', 'attr': '최소', 'old': None, 'new': 10}})
+    out = client(monkeypatch, Gateway(), data).get('/v1/workspaces/7/entities').json()
+    assert out['cards'] == [{'id': 40, 'kind': '속성 값', 'text': "'생수'의 최소: 없음 → 10", 'impact': ["자동화 '최소 미달' 0건 → 1건"]}]

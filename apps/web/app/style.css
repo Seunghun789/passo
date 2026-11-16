@@ -52,3 +52,8 @@
 .pick-node{max-width:360px;font-size:13px;color:#52525b}.link-row{border-top:1px solid #f0f0f2;padding:8px 0}
 @media(max-width:1050px){.graph-layout{grid-template-columns:1fr}.graph{height:420px}}
 .link-row button,.toolbar>button{white-space:nowrap;flex:none}
+.cal-day.on{background:var(--accent-bg)}.cal-day{cursor:default}.calendar .cal-day:not(.out){cursor:pointer}
+.impact{margin:6px 0;padding-left:18px;font-size:13px}.class-tools{margin:8px 0 20px}.class-tools .segments{margin-bottom:10px}
+.member-picks{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 12px;font-size:13px}.member-picks label{display:flex;align-items:center;gap:6px}.member-picks input{width:auto;min-height:0}
+.cell-input{min-height:30px;padding:4px 8px;background:white;min-width:90px}.link-attrs{margin:0 0 14px}.link-attrs input{min-height:30px}
+.node-settings{margin:0 0 16px}.node-settings .pick-form{margin-top:10px}.rel-split{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0;font-size:13px}.rel-split p{margin:4px 0}

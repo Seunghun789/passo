@@ -9,6 +9,18 @@ from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class Edit(BaseModel):
+    """직접 고친 것. payload 는 core/edits.card 가 확정 지식으로 검사한다."""
+    model_config = ConfigDict(extra='forbid', strict=True)
+    kind: Literal['속성 값', '대상', '대상 속성', '같은 대상', '상위 분류', '관계 속성', '칸 설정']
+    payload: dict
+
+
+class Apply(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    ok: bool
+
+
 class LinkPick(BaseModel):
     """[이어 보기]: 두 칸과 관계."""
     model_config = ConfigDict(extra='forbid', strict=True)
@@ -16,6 +28,33 @@ class LinkPick(BaseModel):
     to_ref: str = Field(min_length=1, max_length=300)
     kind: Literal['연결', '함께 움직임', '최소 기준', '최대 기준', '의존', '영향', '대체']
     name: str | None = Field(default=None, max_length=100)
+
+
+EDIT_KINDS = ('속성 값', '대상', '대상 속성', '같은 대상', '상위 분류', '관계 속성', '칸 설정')
+UNDOABLE = ('속성 값', '같은 대상', '칸 설정')  # 반영 전으로 정확히 돌아가는 것만. 기록 종류 · 칸 · 대상 · 분류 확정은 되돌리지 않는다
+
+
+def edit_cards(S):
+    """"직접 고친 것" 카드: 한 줄과, 적용하면 켜 둔 자동화 · 올린 지표가 어떻게 바뀌는지."""
+    from core import engine
+    from core.edits import card_text
+    return [{'id': q['id'], 'kind': q['kind'], 'text': card_text(q), 'impact': engine.impact(S['t'], S['K'], q)} for q in S['cards']]
+
+
+def class_links(K):
+    """대상 분류 사이의 관계와 대상 쌍(관계 정보를 넣을 곳)."""
+    from core import engine
+    from core.ask import plain
+    out = []
+    for l in K['links']:
+        if '.' in l['from_ref'] or '.' in l['to_ref']:
+            continue
+        pairs = engine.link_pairs(K, l)
+        attrs = [d['name'] for d in l.get('attr_defs') or []]
+        out.append({'id': l['id'], 'from': l['from_ref'], 'to': l['to_ref'], 'name': l.get('name') or l['kind'], 'attrs': attrs,
+                    'pairs': plain([{'from': str(r[l['from_ref']]), 'to': str(r[l['to_ref']]), 'values': {a: r[a] for a in attrs}}
+                                    for r in pairs.head(100).to_dict('records')])})
+    return out
 
 
 def entity_table(K):
@@ -50,6 +89,11 @@ def install_routes(app, session, gateway):
             S, http = snapshot(g, token, tid)
             try:
                 S['links_pending'] = S['t'].get('proposals', select='id,kind,payload,evidence', status='eq.대기', kind='eq.연결', order='id')
+                S['cards'] = [q for q in S['t'].get('proposals', select='id,kind,payload,evidence', status='eq.대기', order='id',
+                                                     **{'evidence->>user': 'eq.true'}) if q['kind'] in EDIT_KINDS]
+                S['done_cards'] = [q for q in S['t'].get('proposals', select='id,kind,payload,evidence,decided_at', status='eq.승인',
+                                                          order='decided_at.desc', limit=40, **{'evidence->>user': 'eq.true'})
+                                   if q['kind'] in UNDOABLE and not q['payload'].get('undone') and q['payload'].get('op') != '칸 더하기'][:10]
                 return work(S)
             finally:
                 http.close()
@@ -80,9 +124,42 @@ def install_routes(app, session, gateway):
     async def entities(tid: int, token=Depends(session), g=Depends(gateway)):
         """분류 탭마다 대상 표. 대상을 가리키는 칸이 든 종이를 올리면 저절로 채워진다."""
         await g.authorize(token, tid)
+        from core import engine
+        from core.edits import card_text
         editable = await can_review(g, token, tid)
         return await run(g, token, tid, lambda S: {'can_edit': editable, 'has_records': bool(S['K']['types']),
-                                                     'classes': entity_table(S['K'])})
+                                                     'classes': entity_table(S['K']), 'links': class_links(S['K']),
+                                                     'cards': edit_cards(S), 'dtypes': list(engine.DTYPE_KO.items()),
+                                                     'undoable': [{'id': q['id'], 'kind': q['kind'], 'text': card_text(q), 'at': q['decided_at']}
+                                                                  for q in S['done_cards']]})
+
+    @app.post('/v1/workspaces/{tid}/edits', status_code=201)
+    async def edit(tid: int, body: Edit, token=Depends(session), g=Depends(gateway)):
+        """[바꾼 것 올리기] · [정보 더하기] · [별칭 더하기] · [하위 분류로 묶기] · [상위 분류 정하기] · [관계 정보 올리기]
+        · [단위·설명 올리기] · [다른 이름 더하기] · [칸 더하기]: 바로 쓰지 않고 "직접 고친 것" 카드로 올린다."""
+        await g.authorize(token, tid, 'review')
+        from core.edits import card
+
+        def work(S):
+            try:
+                return card(S['K'], body.kind, body.payload)
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(422, str(exc) if isinstance(exc, ValueError) else '고친 값을 확인해 주세요.') from None
+        payload = await run(g, token, tid, work)
+        return {'id': await g.rpc(token, 'passo_user_card', {'tid': tid, 'card_kind': body.kind, 'payload': payload})}
+
+    @app.post('/v1/workspaces/{tid}/edits/{qid}/undo')
+    async def undo_edit(tid: int, qid: int, token=Depends(session), g=Depends(gateway)):
+        """[되돌리기]: 대상 정보 값 · 별칭 · 칸의 단위·설명 · 다른 이름을 고치기 전으로."""
+        await g.authorize(token, tid, 'review')
+        await g.rpc(token, 'passo_user_card_undo', {'tid': tid, 'qid': qid})
+        return {'id': qid}
+
+    @app.post('/v1/workspaces/{tid}/edits/{qid}')
+    async def apply_edit(tid: int, qid: int, body: Apply, token=Depends(session), g=Depends(gateway)):
+        """카드의 [적용] · [아니요]"""
+        await g.authorize(token, tid, 'review')
+        return await g.rpc(token, 'passo_user_card_answer', {'tid': tid, 'qid': qid, 'ok': body.ok})
 
     @app.post('/v1/workspaces/{tid}/entities/recommend')
     async def recommend_entities(tid: int, token=Depends(session), g=Depends(gateway)):
@@ -110,7 +187,11 @@ def install_routes(app, session, gateway):
         def work(S):
             K, pend = S['K'], S['links_pending']
             nodes, edges = graph_data(K, pend, entities)
-            return {'can_edit': editable, 'has_records': bool(K['types']), 'nodes': nodes, 'edges': edges,
+            return {'can_edit': editable, 'has_records': bool(K['types']), 'nodes': nodes, 'edges': edges, 'cards': edit_cards(S),
+                    'props': {T: [{'name': p['name'], 'dtype': p['dtype'], 'unit': p.get('unit'), 'description': p.get('description')}
+                                  for p in K['props'][T]] for T in K['types']},
+                    'members': {C: [e['name'] for e in engine.members(K, C)] for C in K['classes']},
+                    'class_attrs': {C: [a['name'] for a in engine.class_attrs(K, C)] for C in K['classes']},
                     'links': [{'id': l['id'], 'text': stated(link_sentence({'from': l['from_ref'], 'to': l['to_ref'], 'kind': l['kind'],
                                                                             'name': l.get('name')}))} for l in K['links']],
                     'pending': [{'id': q['id'], 'payload': q['payload'], 'text': link_sentence(q['payload']),
