@@ -1,6 +1,7 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {logout} from './actions';
+import {logout,createWorkspace} from './actions';
+import Settings from './settings';
 import StructureReview from './structure-review';
 import PolicyReview,{ReadReview} from './policy-review';
 import Reread,{RereadStatus} from './reread';
@@ -26,8 +27,8 @@ function status(value:Row['data'][string]){return value&&typeof value==='object'
 const navGroups:[string,[string,string][]][]=[['',[['home','홈']]],['① 종이',[['upload','올리기']]],['② 확인',[['review','확인'],['entities','대상'],['graph','지식그래프']]],['③ 내 기록',[['records','기록'],['dashboard','대시보드'],['automation','자동화']]],['④ 묻기',[['ask','묻기']]]];
 function Icon({name}:{name:string}){const paths:Record<string,string>={upload:'M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5',review:'M18 8a6 6 0 0 0-12 0v6l-2 3h16l-2-3V8M10 21h4',dashboard:'M4 20V10m8 10V4m8 16v-7',automation:'M4 10a8 8 0 0 1 14-5l2 3m0-5v5h-5M20 14a8 8 0 0 1-14 5l-2-3m0 5v-5h5',ask:'M4 3h16v14H9l-5 4V3'};return <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]||paths.ask}/></svg>;}
 
-export default function Workspace({workspaces,selected,initial,view:initialView,name}:{workspaces:W[],selected?:W,initial:Overview|null,view:string,name:string}){
- const [view,setView]=useState(['home','upload','review','records','ask','dashboard','automation','entities','graph'].includes(initialView)?initialView:'home');
+export default function Workspace({workspaces,selected,initial,view:initialView,name,email}:{workspaces:W[],selected?:W,initial:Overview|null,view:string,name:string,email:string}){
+ const [view,setView]=useState(['home','upload','review','records','ask','dashboard','automation','entities','graph','settings'].includes(initialView)?initialView:'home');
  const [data,setData]=useState(initial),[mobile,setMobile]=useState(false),[find,setFind]=useState(''),[error,setError]=useState('');
  const tid=selected?.id,base=`/api/workspaces/${tid}/business`;
  const request=useCallback(async(path:string,init:RequestInit={})=>{const r=await fetch(`${base}/${path}`,{...init,headers:{'Content-Type':'application/json',...init.headers}});if(r.redirected||r.status===401){window.location.href='/login';throw Error('다시 로그인해 주세요.');}if(!r.ok){let detail='요청을 처리하지 못했어요. 다시 시도해 주세요.';if(r.status===409)detail='다른 곳에서 수정됐어요. 새로고침한 뒤 다시 확인해 주세요.';else if(r.status===403)detail='이 작업을 할 권한이 없어요.';else if(r.status===404)detail='저장된 원본을 찾을 수 없어요.';throw Error(detail);}return r.json();},[base]);
@@ -39,10 +40,10 @@ export default function Workspace({workspaces,selected,initial,view:initialView,
  return <div className="workspace-shell">
  <button className="mobile-menu" onClick={()=>setMobile(!mobile)} aria-label="메뉴 열기">☰ <span>passo</span></button>
  <aside className={`sidebar ${mobile?'open':''}`}><a className="brand" href="/">passo</a>
- <details className="workspace-picker"><summary>{selected?.title||'워크스페이스 고르기'} <span>⌄</span></summary><div className="workspace-options"><input aria-label="나의 워크스페이스 검색" placeholder="나의 워크스페이스 검색" value={find} onChange={e=>setFind(e.target.value)}/>{workspaces.filter(w=>w.title.includes(find)).map(w=><a key={w.id} href={`/?workspace=${w.id}&view=${view}`}>{w.title}<small>{w.id===tid?'✓':w.role}</small></a>)}</div></details>
+ <details className="workspace-picker"><summary>{selected?.title||'워크스페이스 고르기'} <span>⌄</span></summary><div className="workspace-options"><input aria-label="나의 워크스페이스 검색" placeholder="나의 워크스페이스 검색" value={find} onChange={e=>setFind(e.target.value)}/>{workspaces.filter(w=>w.title.includes(find)).map(w=><a key={w.id} href={`/?workspace=${w.id}&view=${view}`}>{w.title}<small>{w.id===tid?'✓':w.role}</small></a>)}<div className="picker-actions">{selected&&<button type="button" onClick={()=>go('settings')}>워크스페이스 관리</button>}<a className="button" href="/workspaces">모두 보기</a><form action={createWorkspace}><input type="hidden" name="title" value="새 워크스페이스"/><button type="submit">워크스페이스 생성</button></form></div></div></details>
  <div className="quick-nav">{[['upload','올리기'],['review','확인'],['dashboard','대시보드'],['automation','자동화'],['ask','묻기']].map(([key,label])=><button key={key} className={view===key?'selected':''} onClick={()=>go(key)}><Icon name={key}/><span>{label}</span></button>)}</div>
  <nav aria-label="업무 메뉴">{navGroups.map(([group,items])=><div key={group}>{group&&<p className="nav-heading">{group}</p>}{items.map(([key,label])=><button key={key} aria-current={view===key?'page':undefined} onClick={()=>go(key)}>{label}{key==='review'&&!!data?.review_count&&<span className="count">{data.review_count}</span>}</button>)}</div>)}</nav>
- <details className="account"><summary><span className="avatar">{name.slice(0,2)}</span>{name} · {selected?.role||'계정'}</summary><form action={logout}><button>로그아웃</button></form></details></aside>
+ <details className="account"><summary><span className="avatar">{name.slice(0,2)}</span>{name} · {selected?.role||'계정'}</summary><p className="muted account-email">{email}</p><a className="button" href="/account">내 계정</a><form action={logout}><button>로그아웃</button></form></details></aside>
  <main className="workspace-main">{!selected||!data?<div className="empty"><h1>워크스페이스</h1><p>연결된 워크스페이스가 없거나 접근할 수 없어요.</p></div>:<>
  {error&&<div className="error" role="alert">{error}</div>}
  {view==='home'&&<Home data={data} name={name} title={selected.title} go={go} refresh={refresh} onError={setError} request={request} tid={tid!} records={<Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh}/>}/>}
@@ -54,7 +55,8 @@ export default function Workspace({workspaces,selected,initial,view:initialView,
  {view==='automation'&&<Automation request={request} tid={tid!} go={go}/>}
  {view==='entities'&&<Entities request={request} go={go}/>}
  {view==='graph'&&<KnowledgeGraph request={request} go={go}/>}
- {!['home','upload','review','records','ask','dashboard','automation','entities','graph'].includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
+ {view==='settings'&&<Settings request={request}/>}
+ {!['home','upload','review','records','ask','dashboard','automation','entities','graph','settings'].includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
  </>}</main></div>;
 }
 

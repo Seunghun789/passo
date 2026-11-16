@@ -8,12 +8,14 @@ export default async function Home({searchParams}:{searchParams:Promise<{workspa
  if(!configured()) redirect('/login');
  const params=await searchParams;
  const workspaces=await api('/v1/workspaces');
+ // 가입하고 처음 들어오면 워크스페이스를 하나 만들고 빈 올리기를 연다
+ if(!workspaces.length){const {id}=await api('/v1/workspaces',{method:'POST',body:JSON.stringify({title:'내 워크스페이스'})});redirect(`/?workspace=${id}&view=upload`);}
  // The API orders accessible spaces by this account's last actual visit.
  if(!params.workspace&&workspaces.length) redirect(`/?workspace=${workspaces[0].id}&view=home`);
  const selected=workspaces.find((w:{id:number})=>String(w.id)===params.workspace)??(!params.workspace?workspaces[0]:undefined);
- const sb=await supabase();const {data:{user}}=await sb.auth.getUser();
+ const sb=await supabase();const {data:{user}}=await sb.auth.getUser();const me=await api('/v1/me');
  const period=['오늘','이번 주','이번 달','올해'].includes(params.period||'')?params.period!:'이번 주';
  const overview=selected?await api(`/v1/workspaces/${selected.id}/overview?period=${encodeURIComponent(period)}`):null;
  return <Workspace key={selected?.id??'none'} workspaces={workspaces} selected={selected} initial={overview}
-  view={params.view||'home'} name={user?.user_metadata?.full_name||user?.user_metadata?.name||'내 계정'}/>;
+  view={params.view||'home'} name={me?.name||user?.user_metadata?.full_name||user?.user_metadata?.name||'내 계정'} email={user?.email||''}/>;
 }
