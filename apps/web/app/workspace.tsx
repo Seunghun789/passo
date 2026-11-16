@@ -5,6 +5,7 @@ import StructureReview from './structure-review';
 import PolicyReview,{ReadReview} from './policy-review';
 import Reread,{RereadStatus} from './reread';
 import Ask from './ask';
+import {Automation,Dashboard,HomeAlerts,Periods,WeekSummary} from './insights';
 
 type W={id:number,title:string,role:string};
 type Cell={raw:unknown,value:unknown,status:string};
@@ -25,7 +26,7 @@ const navGroups:[string,[string,string][]][]=[['',[['home','홈']]],['① 종이
 function Icon({name}:{name:string}){const paths:Record<string,string>={upload:'M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5',review:'M18 8a6 6 0 0 0-12 0v6l-2 3h16l-2-3V8M10 21h4',dashboard:'M4 20V10m8 10V4m8 16v-7',automation:'M4 10a8 8 0 0 1 14-5l2 3m0-5v5h-5M20 14a8 8 0 0 1-14 5l-2-3m0 5v-5h5',ask:'M4 3h16v14H9l-5 4V3'};return <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]||paths.ask}/></svg>;}
 
 export default function Workspace({workspaces,selected,initial,view:initialView,name}:{workspaces:W[],selected?:W,initial:Overview|null,view:string,name:string}){
- const [view,setView]=useState(['home','upload','review','records','ask'].includes(initialView)?initialView:'home');
+ const [view,setView]=useState(['home','upload','review','records','ask','dashboard','automation'].includes(initialView)?initialView:'home');
  const [data,setData]=useState(initial),[mobile,setMobile]=useState(false),[find,setFind]=useState(''),[error,setError]=useState('');
  const tid=selected?.id,base=`/api/workspaces/${tid}/business`;
  const request=useCallback(async(path:string,init:RequestInit={})=>{const r=await fetch(`${base}/${path}`,{...init,headers:{'Content-Type':'application/json',...init.headers}});if(r.redirected||r.status===401){window.location.href='/login';throw Error('다시 로그인해 주세요.');}if(!r.ok){let detail='요청을 처리하지 못했어요. 다시 시도해 주세요.';if(r.status===409)detail='다른 곳에서 수정됐어요. 새로고침한 뒤 다시 확인해 주세요.';else if(r.status===403)detail='이 작업을 할 권한이 없어요.';else if(r.status===404)detail='저장된 원본을 찾을 수 없어요.';throw Error(detail);}return r.json();},[base]);
@@ -43,29 +44,31 @@ export default function Workspace({workspaces,selected,initial,view:initialView,
  <details className="account"><summary><span className="avatar">{name.slice(0,2)}</span>{name} · {selected?.role||'계정'}</summary><form action={logout}><button>로그아웃</button></form></details></aside>
  <main className="workspace-main">{!selected||!data?<div className="empty"><h1>워크스페이스</h1><p>연결된 워크스페이스가 없거나 접근할 수 없어요.</p></div>:<>
  {error&&<div className="error" role="alert">{error}</div>}
- {view==='home'&&<Home data={data} name={name} title={selected.title} go={go} refresh={refresh} onError={setError} records={<Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh}/>}/>}
+ {view==='home'&&<Home data={data} name={name} title={selected.title} go={go} refresh={refresh} onError={setError} request={request} tid={tid!} records={<Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh}/>}/>}
  {view==='upload'&&<Upload data={data} tid={tid!} canUpload={canUpload} canReview={canReview} request={request} refresh={refresh} go={go}/>}
  {view==='review'&&<Reviews data={data} tid={tid!} request={request} canReview={canReview} refresh={refresh} go={go}/>}
  {view==='records'&&<><h1>기록</h1><p className="muted">쌓인 기록을 표로 보고, 칸을 누르면 원본과 나란히 확인할 수 있어요.</p><Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh}/></>}
  {view==='ask'&&<Ask request={request} go={go}/>}
- {!['home','upload','review','records','ask'].includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
+ {view==='dashboard'&&<Dashboard request={request} tid={tid!} go={go}/>}
+ {view==='automation'&&<Automation request={request} tid={tid!} go={go}/>}
+ {!['home','upload','review','records','ask','dashboard','automation'].includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
  </>}</main></div>;
 }
 
 type RequestFn=(path:string,init?:RequestInit)=>Promise<any>;
-function Home({data,name,title,go,refresh,onError,records}:{data:Overview,name:string,title:string,go:(v:string)=>void,refresh:(p?:string)=>Promise<void>,onError:(e:string)=>void,records:React.ReactNode}){
- const [weekly,setWeekly]=useState(false);
+function Home({data,name,title,go,refresh,onError,records,request,tid}:{data:Overview,name:string,title:string,go:(v:string)=>void,refresh:(p?:string)=>Promise<void>,onError:(e:string)=>void,records:React.ReactNode,request:RequestFn,tid:number}){
+ const [hits,setHits]=useState(0);
  const now=new Date(),hour=Number(new Intl.DateTimeFormat('ko',{hour:'numeric',hour12:false,timeZone:'Asia/Seoul'}).format(now).replace(/\D/g,''));
  const hello=hour>=5&&hour<11?'좋은 아침이에요':hour>=11&&hour<17?'좋은 오후예요':'좋은 저녁이에요';
+ const todo=hits+(data.review_count?1:0);
+ const feed=<section className="panel feed"><b>어제 이후 바뀐 것</b>{data.recent.length?data.recent.map(s=><div key={s.id} className="feed-row"><small>{s.at.slice(5,10).replace('-','월 ')}일</small><span>{s.text}</span></div>):<p className="muted">어제 이후 바뀐 것이 없어요.</p>}</section>;
  return <><p className="hello-date">{new Intl.DateTimeFormat('ko',{month:'long',day:'numeric',weekday:'long',timeZone:'Asia/Seoul'}).format(now)} · {title}</p>
- <div className="greeting-row"><h1 className="greeting">{hello}, {name}님. {data.review_count?'오늘 챙길 것은 1가지예요':'오늘 확인할 종이는 없어요'}</h1>
- <button className="weekly-button" onClick={()=>{setWeekly(!weekly);if(!weekly)refresh("이번 주").catch(e=>onError(e.message));}}>이번 주 한눈에 보기</button></div>{weekly&&<p className="info">이번 주 기록 {data.types.reduce((n,t)=>n+t.current,0)}줄 · 확인할 것 {data.review_count}개. 아래 종류별 숫자와 기록 표에서 근거를 확인할 수 있어요.</p>}
- <div className="segments" aria-label="보는 기간">{['오늘','이번 주','이번 달','올해'].map(p=><button aria-pressed={data.period===p} key={p} onClick={()=>refresh(p).catch(e=>onError(e.message))}>{p}</button>)}</div>
+ <div className="greeting-row"><h1 className="greeting">{hello}, {name}님. {todo?`오늘 챙길 것은 ${todo}가지예요`:'오늘은 챙길 것이 없어요'}</h1>
+ {!!data.record_count&&<WeekSummary request={request} tid={tid}/>}</div>
+ <Periods period={data.period} set={p=>refresh(p).catch(e=>onError(e.message))}/>
  <p className="muted section-caption">오늘 먼저 볼 것</p>
  {!!data.review_count&&<div className="review-banner"><div><b>확인할 것 {data.review_count}개가 기다려요</b><p>AI가 바로 반영했고, 사람이 봐야 할 것만 남겼어요.</p></div><button className="primary" onClick={()=>go('review')}>확인할 것 {data.review_count}개</button></div>}
- <p className="muted">자동화 알림은 다음 이관 단계에서 연결합니다. 현재는 문서 확인 항목을 보여 줍니다.</p>
- <div className="home-columns"><section className="panel feed"><b>어제 이후 바뀐 것</b>{data.recent.length?data.recent.map(s=><div key={s.id} className="feed-row"><small>{s.at.slice(5,10).replace('-','월 ')}일</small><span>{s.text}</span></div>):<p className="muted">어제 이후 바뀐 것이 없어요.</p>}</section>
- <section><b>{data.period} 한눈에</b><div className="metrics">{data.types.slice(0,3).map(t=><div className="panel metric" key={t.name}><span>{t.name} 기록 수</span><strong>{t.current}</strong><small>{data.period==='오늘'?'어제':data.period==='이번 주'?'지난주':data.period==='이번 달'?'지난달':'작년'} {t.previous} · 근거 {t.current}줄</small></div>)}</div><p className="muted">숫자는 모두 기록에서 셌어요.</p></section></div>
+ <HomeAlerts request={request} tid={tid} period={data.period} go={go} onCount={setHits} feed={feed}/>
  <details className="home-records"><summary>쌓인 기록 · 표와 추이 <span>{data.record_count.toLocaleString()}줄</span></summary>{records}</details>
  {!data.record_count&&<div className="empty"><h2>종이 한 장이면 이 화면이 채워져요.</h2><button className="primary" onClick={()=>go('upload')}>사진 올리기</button></div>}
  </>;

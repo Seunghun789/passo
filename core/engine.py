@@ -3203,10 +3203,11 @@ def week_facts(t, K):
     return facts
 
 
-def week_summary(t, model, K):
-    """(문장마다 {글, 근거 기록 id들}, 센 숫자). 숫자는 week_facts 가 세고, Claude 는 문장만 쓴다."""
+def week_summary(t, model, K, **ai):
+    """(문장마다 {글, 근거 기록 id들}, 센 숫자). 숫자는 week_facts 가 세고, Claude 는 문장만 쓴다.
+    ai: llm.summarize 에 넘길 api_client·log_sink(API 서버가 부른 사람의 워크스페이스로 남길 때)."""
     facts = week_facts(t, K)
-    lines = llm.summarize(t, model, [{k: v for k, v in f.items() if k != "ids"} for f in facts])
+    lines = llm.summarize(t, model, [{k: v for k, v in f.items() if k != "ids"} for f in facts], **ai)
     out = []
     for line in lines:
         ids = {i for n in line["facts"] if 0 <= n < len(facts) for i in facts[n]["ids"]}

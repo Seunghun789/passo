@@ -528,7 +528,7 @@ def build_chat(t, model, kind, history, request, types, cols, links_text, stats)
 
 # ---- 이번 주 요약 ----
 
-def summarize(t, model, facts):
+def summarize(t, model, facts, api_client=None, log_sink=None):
     """서비스가 센 숫자(facts)를 대표가 읽을 문장으로만 바꾼다. 문장마다 근거 사실 번호를 단다."""
     prompt = (
         "아래는 서비스가 기록으로 센 이번 주(최근 7일)와 지난주(그 전 7일) 숫자입니다.\n"
@@ -538,7 +538,8 @@ def summarize(t, model, facts):
         "- 한 사실은 한 문장에만 쓰세요.\n"
         "- facts 에는 그 문장의 근거가 된 사실의 번호(n)."
     )
-    return ask_json(t, model, prompt, obj(lines=array(obj(text=S, facts=array({"type": "integer"})))), prompt)["lines"]
+    return ask_json(t, model, prompt, obj(lines=array(obj(text=S, facts=array({"type": "integer"})))), prompt,
+                    api_client=api_client, log_sink=log_sink)["lines"]
 
 
 # ---- D 질의: 닫힌 조회 도구만 쓰는 근거 답변 ----

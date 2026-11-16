@@ -161,3 +161,27 @@ core/engine의 조회 도구가 기록에서 세며, 모델은 도구를 고르�
 검증: tests/documents/test_ask.py(권한·입력 검사·기록에서 센 숫자·사용 기록),
 tests/documents/usage-log-cases.mjs(PGlite), eval/verify_ask_live.py(실제 Auth·API·브라우저·모델,
 임시 계정과 기록을 만들고 끝나면 지운다).
+
+홈 · 대시보드 · 자동화 (013)
+-----------------------------
+GET /v1/workspaces/{tid}/home은 켜 둔 자동화 중 걸린 것이 많은 두 장(한 문장, 걸린 대상마다
+왜 · 안 보면, 근거 기록), 더 걸린 것 · 걸린 것이 없는 것, 보는 기간 한눈에를 준다.
+GET /v1/workspaces/{tid}/automations는 켜 둔 · 꺼 둔 자동화와 반복 업무 제안(지금 걸린 것,
+지난 30일이었다면 걸렸을 수)을, GET /v1/workspaces/{tid}/dashboard는 기록 현황(종류별 기록 수,
+숫자 칸 추이), 올린 지표, 추천 지표를 준다. 보는 기간은 period(오늘 · 이번 주 · 이번 달 · 올해)다.
+
+글과 숫자는 core/insights.py가 core/engine으로 기록에서 센다. 제안은 확정한 관계 · 기록 간격 ·
+요일에서 규칙으로 만들고 AI를 부르지 않는다. [켜기] · [올리기]는 제목만 받고, 서버가 지금 확정
+지식에서 다시 만든 같은 제목의 규칙을 013의 passo_automation_add · passo_widget_add로 넣는다.
+[끄기] · [다시 켜기] · [내리기]는 passo_automation_status · passo_widget_status다. 모두 확인하는
+사람 이상만 되고, 보는 사람은 보기만 한다.
+
+POST /v1/workspaces/{tid}/week-summary([이번 주 요약 만들기])는 engine.week_facts가 센 숫자로
+모델이 문장만 쓰고, 문장마다 근거 기록을 붙인다. 사용 기록은 묻기와 같이 passo_log_ai로 남긴다.
+
+"오늘"은 서버 시간대로 센다. API 서버는 TZ=Asia/Seoul로 띄운다(render.yaml).
+말로 만들기 대화, 보기 고르기 · 골라서 만들기, 일정 달력, AI가 새로 추천받기는 이 단계에 포함하지 않는다.
+
+검증: tests/documents/test_insights.py(권한 · 서버가 다시 만든 규칙만 넣기 · 기록에서 센 숫자 · 요약 사용 기록),
+tests/documents/rules-cases.mjs(PGlite), eval/verify_insights_live.py(실제 Auth · API · 브라우저 · 모델,
+임시 계정과 기록을 만들고 끝나면 지운다).
