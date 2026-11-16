@@ -85,6 +85,11 @@ def test_worker_uses_selected_model_and_legacy_original(monkeypatch):
         return {'sheet':{}}
     monkeypatch.setattr(extraction, 'run_model', model)
     monkeypatch.setattr(extraction, 'make_payload', lambda *args:{'records':[{}]})
+    def structure(fetch, tid, sheet, records, selected):
+        assert (tid, selected) == (7, 'claude-opus-5-5')
+        calls.append('structure')
+        return {'type':'점검', 'title':'t', 'props':[], 'links':[], 'samples':{}, 'evidence':{}, 'usage':[]}
+    monkeypatch.setattr(extraction, 'run_structure', structure)
     w = Worker.__new__(Worker)
     def request(method, path, **kwargs):
         if path == '/rest/v1/source_inputs':return SimpleNamespace(json=lambda:[{'storage_path':'uploads/7-10.png'}])
@@ -94,10 +99,13 @@ def test_worker_uses_selected_model_and_legacy_original(monkeypatch):
     w.request = request
     def rpc(name, body):
         assert name in ('passo_worker_save', 'passo_worker_finish')
+        if name == 'passo_worker_finish':
+            assert body['payload']['structure']['type'] == '점검' and 'usage' not in body['payload']['structure']
+            assert body['payload']['records'][0]['type_name'] == '점검'
         calls.append(name)
         return True
     w.rpc = rpc
     w.process({'id':'job', 'lease_token':'fence', 'tenant_id':7, 'source_input_id':10,
                'sha256':hashlib.sha256(b'original').hexdigest(), 'byte_size':8,
                'media_type':'image/png', 'model_id':'claude-opus-5-5', 'original_bucket':'uploads'})
-    assert calls == ['passo_worker_save', 'model', 'passo_worker_save', 'passo_worker_finish']
+    assert calls == ['passo_worker_save', 'model', 'passo_worker_save', 'structure', 'passo_worker_save', 'passo_worker_finish']

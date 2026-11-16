@@ -119,3 +119,23 @@ https://render.com/docs/blueprint-spec
 https://vercel.com/docs/plans/hobby
 https://vercel.com/docs/functions/limitations
 https://supabase.com/pricing
+
+구조 정하기 (011)
+-----------------
+워커는 읽기 뒤에 구조 단계를 한 번 더 거친다: OCR → 모델 읽기 → 구조 정하기 → 반영.
+구조 정하기는 backend/structure.py가 기존 core/engine.schema_plan과 core/llm.propose_schema를
+그대로 불러, 확정된 기록 종류·칸·이름 연결과 견주어 기록 종류 이름, 칸 이름, 값의 종류, 단위,
+같은 칸 후보, 대상 분류 후보, 칸 사이 관계를 정한다. 값의 종류는 코드가 적힌 값과 맞춰 본다.
+이미 아는 칸만 적힌 같은 양식이면 모델을 부르지 않는다. 결과는 checkpoint의 structure에 남는다.
+워커는 워크스페이스의 확정 지식을 읽기만 하고, 쓰기는 passo_worker_finish가 한 트랜잭션으로 한다.
+
+011_structure_plan.sql은 payload.structure를 받아 새 종류면 '종류' 카드, 아는 종류면 모르는
+이름마다 '칸'·'같은 칸' 카드와 '연결' 카드를 만들고, 기록은 대기로 넣은 뒤 기존 자동 판단
+정책(009)으로 반영한다. 읽은 이름은 기록에 그대로 남고 칸 이름과는 이름 연결로 잇는다.
+모델이 구조를 정하지 못하면 읽은 이름 그대로 올리고 근거에 no_ai를 붙여 사람이 답할 때까지
+기다린다. payload.structure가 없으면 이전 방식으로 처리한다.
+적용 순서: 011 적용 → 워커 교체. 범위 칸을 아래값·위값으로 나누기와 대상 등록·같은 대상
+찾기는 이 단계에 포함하지 않는다.
+
+검증: tests/documents/test_structure.py(구조 판단), tests/documents/structure-plan-cases.mjs
+(PGlite에서 카드 생성·정책 반영·원자성·이전 방식 호환).

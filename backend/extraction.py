@@ -37,19 +37,36 @@ def run_ocr(content, mime):
     return {str(n):ocr.lines(page_image(content,mime,n)) for n in range(1,pages+1)}
 
 
-def run_model(content, mime, model=None):
-    import anthropic
-    import httpx2
-    from core.llm import connect, extract, DEFAULT, MODELS
+def selected_model(model=None):
+    from core.llm import DEFAULT, MODELS
     selected = model or os.environ.get('PASSO_MODEL', DEFAULT)
     if selected not in MODELS:
         raise ValueError('unsupported_model')
+    return selected
+
+
+def ai_client():
+    import anthropic
+    import httpx2
+    from core.llm import connect
+    # Explicit transport: use authorized provider key, no implicit retries or proxy.
+    return anthropic.Anthropic(**{'base_url':'https://api.anthropic.com',**connect(os.environ),'max_retries':0,'timeout':180},
+        http_client=httpx2.Client(trust_env=False,timeout=180))
+
+
+def run_structure(fetch, tid, sheet, records, model=None):
+    from backend.structure import Reader, plan_structure
+    with ai_client() as client:
+        return plan_structure(Reader(fetch,tid),selected_model(model),sheet['title'],records,client)
+
+
+def run_model(content, mime, model=None):
+    from core.llm import extract
+    selected = selected_model(model)
     usage = {}
     def sink(t, model, prompt, answer, usage_in, usage_out, started):
         usage.update(model=model,input_tokens=usage_in,output_tokens=usage_out,seconds=round(time.monotonic()-started,3))
-    # Explicit transport: use authorized provider key, no implicit retries or proxy.
-    with anthropic.Anthropic(**{'base_url':'https://api.anthropic.com',**connect(os.environ),'max_retries':0,'timeout':180},
-        http_client=httpx2.Client(trust_env=False,timeout=180)) as client:
+    with ai_client() as client:
         sheet = extract(None,selected,'original.pdf' if mime=='application/pdf' else 'original.png',
                         content,api_client=client,log_sink=sink)
     return {'sheet':sheet,'usage':usage}

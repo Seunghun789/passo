@@ -17,8 +17,9 @@ env = {**os.environ, **dict(
     for line in (env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else [])
     if "=" in line and not line.startswith("#")
 )}
-API = env["SUPABASE_URL"].strip().rstrip("/") + "/rest/v1/"
-HEADERS = {"apikey": (env.get("SUPABASE_SECRET_KEY") or env["SUPABASE_KEY"]).strip()}
+# 키가 없어도 모듈은 읽힌다: 워커는 engine 의 판단만 빌려 쓰고 이 모듈로는 DB 를 부르지 않는다.
+API = env.get("SUPABASE_URL", "").strip().rstrip("/") + "/rest/v1/"
+HEADERS = {"apikey": (env.get("SUPABASE_SECRET_KEY") or env.get("SUPABASE_KEY") or "").strip()}
 
 
 _local = threading.local()
@@ -64,7 +65,7 @@ def post(table, body, **params):
     return call("POST", table, params, body, prefer)
 
 
-STORAGE = env["SUPABASE_URL"].strip().rstrip("/") + "/storage/v1/object/uploads/"  # 비공개 버킷 'uploads'
+STORAGE = env.get("SUPABASE_URL", "").strip().rstrip("/") + "/storage/v1/object/uploads/"  # 비공개 버킷 'uploads'
 
 
 def put_file(path, content):
