@@ -5,3 +5,13 @@
 @media(max-width:1050px){.home-columns{grid-template-columns:1fr}.manual-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.paper-row{flex-wrap:wrap}.paper-name{flex-basis:45%}}@media(max-width:768px){.mobile-menu{display:flex;position:sticky;top:0;background:white;z-index:30;border-radius:0;width:100%;justify-content:flex-start;padding:10px 20px;border-bottom:1px solid var(--line)}.mobile-menu span{font-size:22px;margin-left:14px}.sidebar{transform:translateX(-100%);top:58px;padding-top:20px;width:240px;box-shadow:8px 0 30px #0001}.sidebar.open{transform:none}.workspace-main{margin-left:0;padding:24px 18px 60px}.detail-grid,.review-layout{grid-template-columns:1fr}.greeting-row{align-items:flex-start;flex-direction:column}.greeting{font-size:20px}.metrics{flex-wrap:wrap}.metric{min-width:130px}.manual-fields{grid-template-columns:1fr}.dropzone{align-items:stretch;flex-direction:column}.dropzone>div{flex-wrap:wrap}.toolbar{flex-wrap:wrap}.review-banner{align-items:stretch;flex-direction:column}.paper-row{gap:10px}.paper-name{flex-basis:50%}.paper-row>span{font-size:12px}.review-card{padding:18px}.finished{padding:28px 18px}}
 
 .weekly-button{display:block;margin:0 0 18px;min-height:38px}
+
+.ask-examples{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.ask-examples button{font-size:13px;min-height:30px;padding:4px 12px;border-radius:999px}
+.ask-form{display:grid;grid-template-columns:1fr 180px auto;gap:12px;align-items:end;margin:0 0 18px}
+.ask-form label{display:grid;gap:6px;font-size:13px;color:#52525b}
+.ask-form input,.ask-form select{min-height:38px;width:100%}
+.ask-answer{margin:0 0 12px}
+.ask-text{font-size:16px;line-height:1.7;margin:8px 0;white-space:pre-wrap}
+@media(max-width:760px){.ask-form{grid-template-columns:1fr}}
+.plain-table td{padding:8px 12px}

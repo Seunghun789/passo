@@ -46,6 +46,7 @@ try {
  await db.exec(await readFile('db/migrations/009_policy_undo.sql','utf8'));
  await db.exec(await readFile('db/migrations/010_resume_and_reread.sql','utf8'));
  await db.exec(await readFile('db/migrations/011_structure_plan.sql','utf8'));
+ await db.exec(await readFile('db/migrations/012_ai_usage_log.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);
@@ -118,6 +119,7 @@ try {
  await (await import('../documents/policy-cases.mjs')).policyCases({db,as,denied,check,uid});
  await (await import('../documents/resume-reread-cases.mjs')).resumeRereadCases({db,as,denied,check,uid});
  await (await import('../documents/structure-plan-cases.mjs')).structurePlanCases({db,as,denied,check,uid});
+ await (await import('../documents/usage-log-cases.mjs')).usageLogCases({db,as,denied,check,uid});
  await db.exec("update public.memberships set role='확인하는 사람' where user_id=3");
  check('role promotion visible on same token',(await as(3,"select public.passo_access(1,'review') as allowed"))[0].allowed===true);
  await db.exec("update public.memberships set role='보는 사람' where user_id=3");

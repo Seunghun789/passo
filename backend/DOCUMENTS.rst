@@ -141,3 +141,23 @@ https://supabase.com/pricing
 
 검증: tests/documents/test_structure.py(구조 판단), tests/documents/structure-plan-cases.mjs
 (PGlite에서 카드 생성·정책 반영·원자성·이전 방식 호환).
+
+묻기 (012)
+----------
+GET /v1/workspaces/{tid}/ask는 고를 수 있는 모델, 처음 모델, 확정한 기록 종류·칸 이름으로 만든
+예시 질문을 준다. POST /v1/workspaces/{tid}/ask는 질문(500자까지)과 모델을 받아 답, 어떻게
+찾았는지, 근거 기록을 준다. 워크스페이스에 들어올 수 있는 사람은 역할과 상관없이 물을 수 있다.
+
+답은 core/ask.py가 만든다. 확정 지식과 기록은 부른 사람의 JWT로만 읽고(RLS), 건수·합계는
+core/engine의 조회 도구가 기록에서 세며, 모델은 도구를 고르고 답 문장을 쓴다. 같은 모듈을
+기존 Streamlit 화면도 쓴다. API 서버는 RUNYOUR_API_KEY(없으면 ANTHROPIC_API_KEY)로 모델을 부른다.
+012_ai_usage_log.sql의 passo_log_ai가 호출마다 모델·토큰·금액·걸린 시간을 ai_logs에 남긴다.
+남기지 못해도 받은 답은 돌려주고 서버 로그에 usage_log_failed를 남긴다.
+실패 로그에는 실패 종류만 남기고 질문·답·키는 남기지 않는다.
+
+나란히 보기, [이 답이 맞아요], 근거 줄에서 원본 사진 열기, 워크스페이스별 AI 한도는
+이 단계에 포함하지 않는다.
+
+검증: tests/documents/test_ask.py(권한·입력 검사·기록에서 센 숫자·사용 기록),
+tests/documents/usage-log-cases.mjs(PGlite), eval/verify_ask_live.py(실제 Auth·API·브라우저·모델,
+임시 계정과 기록을 만들고 끝나면 지운다).

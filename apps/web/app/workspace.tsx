@@ -4,6 +4,7 @@ import {logout} from './actions';
 import StructureReview from './structure-review';
 import PolicyReview,{ReadReview} from './policy-review';
 import Reread,{RereadStatus} from './reread';
+import Ask from './ask';
 
 type W={id:number,title:string,role:string};
 type Cell={raw:unknown,value:unknown,status:string};
@@ -24,7 +25,7 @@ const navGroups:[string,[string,string][]][]=[['',[['home','홈']]],['① 종이
 function Icon({name}:{name:string}){const paths:Record<string,string>={upload:'M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5',review:'M18 8a6 6 0 0 0-12 0v6l-2 3h16l-2-3V8M10 21h4',dashboard:'M4 20V10m8 10V4m8 16v-7',automation:'M4 10a8 8 0 0 1 14-5l2 3m0-5v5h-5M20 14a8 8 0 0 1-14 5l-2-3m0 5v-5h5',ask:'M4 3h16v14H9l-5 4V3'};return <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]||paths.ask}/></svg>;}
 
 export default function Workspace({workspaces,selected,initial,view:initialView,name}:{workspaces:W[],selected?:W,initial:Overview|null,view:string,name:string}){
- const [view,setView]=useState(['home','upload','review','records'].includes(initialView)?initialView:'home');
+ const [view,setView]=useState(['home','upload','review','records','ask'].includes(initialView)?initialView:'home');
  const [data,setData]=useState(initial),[mobile,setMobile]=useState(false),[find,setFind]=useState(''),[error,setError]=useState('');
  const tid=selected?.id,base=`/api/workspaces/${tid}/business`;
  const request=useCallback(async(path:string,init:RequestInit={})=>{const r=await fetch(`${base}/${path}`,{...init,headers:{'Content-Type':'application/json',...init.headers}});if(r.redirected||r.status===401){window.location.href='/login';throw Error('다시 로그인해 주세요.');}if(!r.ok){let detail='요청을 처리하지 못했어요. 다시 시도해 주세요.';if(r.status===409)detail='다른 곳에서 수정됐어요. 새로고침한 뒤 다시 확인해 주세요.';else if(r.status===403)detail='이 작업을 할 권한이 없어요.';else if(r.status===404)detail='저장된 원본을 찾을 수 없어요.';throw Error(detail);}return r.json();},[base]);
@@ -46,7 +47,8 @@ export default function Workspace({workspaces,selected,initial,view:initialView,
  {view==='upload'&&<Upload data={data} tid={tid!} canUpload={canUpload} canReview={canReview} request={request} refresh={refresh} go={go}/>}
  {view==='review'&&<Reviews data={data} tid={tid!} request={request} canReview={canReview} refresh={refresh} go={go}/>}
  {view==='records'&&<><h1>기록</h1><p className="muted">쌓인 기록을 표로 보고, 칸을 누르면 원본과 나란히 확인할 수 있어요.</p><Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh}/></>}
- {!['home','upload','review','records'].includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
+ {view==='ask'&&<Ask request={request} go={go}/>}
+ {!['home','upload','review','records','ask'].includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
  </>}</main></div>;
 }
 

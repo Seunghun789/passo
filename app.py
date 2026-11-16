@@ -19,6 +19,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from core import db, engine, llm
+from core.ask import FN_KO, cond_text, examples, understood, verified
 from core.record_cells import encode_record, decode_record, status_rows, LABELS
 
 st.set_page_config(page_title="passo", layout="wide", initial_sidebar_state="expanded")
@@ -402,21 +403,6 @@ def fmt(v):
         return "-"
     v = float(v)
     return f"{int(v):,}" if v == int(v) else f"{v:,.2f}".rstrip("0").rstrip(".")
-
-
-def cond_text(c):
-    v = c.get("value_prop") or c.get("value")
-    if c["op"] == "within_days":
-        return f"{c['prop']}이(가) {v}일 안"
-    if c["op"] == "is_today":
-        return f"{c['prop']}이(가) 오늘"
-    if c["op"] == "last_days":
-        return f"{c['prop']}이(가) 지난 {v}일 안"
-    if c["op"] == "older_than_days":
-        return f"{'마지막 기록이' if c['prop'] == '날짜' else c['prop'] + '이(가)'} {v}일 넘게 지남"
-    if c["op"] == "contains":
-        return f"{c['prop']}에 '{v}' 포함"
-    return f"{c['prop']} {c['op']} {v}"
 
 
 def ref_text(ref):
@@ -2263,50 +2249,6 @@ def check(t, K):
     recent(t, K)
     if qs or not done_n:  # 다 답한 화면은 위 카드에 [홈으로]가 있다
         st.button("홈으로", on_click=go, args=("홈",))
-
-
-FN_KO = {"count": "줄 수", "sum": "합계", "avg": "평균", "min": "가장 작은 값", "max": "가장 큰 값", "latest": "가장 최근 값"}
-
-
-def understood(calls):
-    """AI가 부른 조회 도구의 입력을 쉬운 말로: '기록 종류 설비 점검 · 진동 > 7 · 진동 가장 큰 값 · 설비별'."""
-    out = []
-    for name, inp, *results in calls:
-        if name == "saved":
-            if inp.get("name"):
-                out.append(f"켜 둔 자동화·올린 지표: {inp['name']}")
-            continue
-        if name == "schema" or not inp.get("type"):
-            continue
-        parts = [inp["type"]]
-        parts += [cond_text(c) for c in inp.get("where") or []]
-        if name == "aggregate":
-            parts.append(f"{inp.get('prop') or ''} {FN_KO.get(inp.get('fn'), '')}".strip())
-            result = results[0] if results and isinstance(results[0], dict) else {}
-            if "미확정 칸" in result:
-                parts.append(f"확인된 수량 {result['확인된 수량 칸']}칸 · 미확정 {result['미확정 칸']}칸")
-            if inp.get("group_by"):
-                parts.append(f"{inp['group_by']}별")
-        if (line := " · ".join(parts)) not in out:
-            out.append(line)
-    return out
-
-
-def examples(K):
-    """질문 칸 아래 예시: 확정한 기록 종류·칸 이름으로만 만든다."""
-    out = []
-    for T in K["types"][:2]:
-        out.append(f"이번 주 {T} 몇 건?")
-        nums, ent = engine.prop_names(K, T, "number"), engine.entity(K, T)
-        if nums and ent:
-            out.append(f"{ent}별 {nums[0]} 가장 큰 값은?")
-    return out[:3]
-
-
-def verified(t, q):
-    """[이 답이 맞아요]로 고른 적이 있는 같은 질문의 답."""
-    v = t.get("eval_votes", select="pick,answer_before,answer_after", question=f"eq.{q}", order="id.desc", limit=1)
-    return (v[0]["answer_after"] if v[0]["pick"] == "확정 후" else v[0]["answer_before"]) if v else None
 
 
 def ask(t, K):

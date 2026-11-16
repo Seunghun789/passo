@@ -167,3 +167,5 @@ from backend.documents import install_routes
 install_routes(app, session, gateway)
 from backend.workspace import install_routes as install_workspace_routes
 install_workspace_routes(app, session, gateway)
+from backend.ask import install_routes as install_ask_routes
+install_ask_routes(app, session, gateway)

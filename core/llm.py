@@ -571,8 +571,9 @@ TOOLS = [
 ]
 
 
-def answer(t, model, question, run_tool, max_turns=6):
-    """질문 → Claude 가 조회 도구만 불러 근거를 찾고 답한다. (답, 근거 기록 id들)을 돌려준다."""
+def answer(t, model, question, run_tool, max_turns=6, api_client=None, log_sink=None):
+    """질문 → Claude 가 조회 도구만 불러 근거를 찾고 답한다. (답, 근거 기록 id들)을 돌려준다.
+    api_client·log_sink: 부르는 쪽이 고른 연결과 기록 남길 곳(없으면 이 모듈의 것)."""
     system = (
         "당신은 passo 의 기록 도우미입니다. 사용자가 손으로 적은 기록이 표로 쌓여 있습니다.\n"
         "- 먼저 schema 로 어떤 기록 종류·대상 분류·칸이 있는지 보고, find_records·aggregate 로 찾아 그 결과로만 답하세요. "
@@ -589,7 +590,7 @@ def answer(t, model, question, run_tool, max_turns=6):
     evidence = []
     reply = None
     for _ in range(max_turns):
-        reply = client().messages.create(model=model, max_tokens=16000, system=system, tools=TOOLS, messages=messages)
+        reply = (api_client or client()).messages.create(model=model, max_tokens=16000, system=system, tools=TOOLS, messages=messages)
         used_in += reply.usage.input_tokens
         used_out += reply.usage.output_tokens
         if reply.stop_reason != "tool_use":
@@ -613,7 +614,7 @@ def answer(t, model, question, run_tool, max_turns=6):
     elif reply.stop_reason == "refusal":
         text = "이 질문에는 답할 수 없어요."
     text = text or "기록에 없어요."
-    log(t, model, f"[묻기] {question}", text, used_in, used_out, started)
+    (log_sink or log)(t, model, f"[묻기] {question}", text, used_in, used_out, started)
     return text, evidence
 
 
