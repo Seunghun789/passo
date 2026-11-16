@@ -70,51 +70,21 @@ begin
  return true;
 end $$;
 
+-- 공개 함수 passo_worker_finish 는 그대로 둔다. 그 함수가 부르는 worker_finish_v1 자리에 갈림길을 끼운다.
+alter function passo_private.worker_finish_v1(uuid,uuid,jsonb) rename to worker_finish_v0;
+
 create function passo_private.worker_publish(jid uuid,fence uuid,payload jsonb)
 returns boolean language plpgsql set search_path='' as $$
 begin
  if payload ? 'structure' then return passo_private.worker_finish_v2(jid,fence,payload); end if;
- return passo_private.worker_finish_v1(jid,fence,payload);
+ return passo_private.worker_finish_v0(jid,fence,payload);
 end $$;
 
-create or replace function public.passo_worker_finish(jid uuid,fence uuid,payload jsonb)
-returns boolean language plpgsql security definer set search_path='' as $$
-declare j public.passo_jobs; before_value jsonb; qid bigint;
+create function passo_private.worker_finish_v1(jid uuid,fence uuid,payload jsonb)
+returns boolean language plpgsql set search_path='' as $$
 begin
- select * into j from public.passo_jobs where id=jid;
- if not found then return false; end if;
- perform 1 from public.tenants where id=j.tenant_id for update;
- select * into j from public.passo_jobs where id=jid for update;
- if j.status<>'running' or j.lease_token is distinct from fence or j.lease_until<now() then return false; end if;
- if j.reread_revision is null then
-  if not passo_private.worker_publish(jid,fence,payload) then return false; end if;
-  perform passo_private.auto_apply(j.tenant_id,j.source_input_id);
-  return true;
- end if;
- before_value:=passo_private.source_snapshot(j.tenant_id,j.source_input_id);
- if md5(before_value::text) is distinct from j.reread_revision
- or exists(select 1 from public.records where tenant_id=j.tenant_id and source_input_id=j.source_input_id and status='확정') then
-  update public.passo_jobs set status='failed',error_code='source_changed',lease_token=null,lease_until=null,updated_at=now() where id=jid;
-  return false;
- end if;
- -- Delete/replace only after successful extraction, in this same transaction. Any error rolls back.
- delete from public.proposals where tenant_id=j.tenant_id and source_input_id=j.source_input_id and status='대기';
- delete from public.records where tenant_id=j.tenant_id and source_input_id=j.source_input_id;
- if not passo_private.worker_publish(jid,fence,payload) then raise exception 'Lease changed'; end if;
- update public.records set status='대기' where tenant_id=j.tenant_id and source_input_id=j.source_input_id;
- update public.source_inputs set auto=false where tenant_id=j.tenant_id and id=j.source_input_id;
- update public.proposals q set payload=q.payload||'{"reopened":true}'::jsonb
- where q.tenant_id=j.tenant_id and q.source_input_id=j.source_input_id and q.status='대기';
- insert into public.proposals(tenant_id,kind,payload,evidence,source_input_id)
- values(j.tenant_id,'읽은 값',jsonb_build_object('type',payload->'records'->0->>'type_name',
-  'rows',jsonb_array_length(payload->'records'),'reopened',true,'model',j.model_id,'job_id',jid),
-  '{"user":true}',j.source_input_id) returning id into qid;
- perform passo_private.audit(j.tenant_id,'원본 다시 읽기',before_value,
-  passo_private.source_snapshot(j.tenant_id,j.source_input_id)||jsonb_build_object('job_id',jid,'model',j.model_id));
- return true;
+ return passo_private.worker_publish(jid,fence,payload);
 end $$;
 
-revoke all on function passo_private.worker_finish_v2(uuid,uuid,jsonb),passo_private.worker_publish(uuid,uuid,jsonb) from public,anon,authenticated;
-revoke all on function public.passo_worker_finish(uuid,uuid,jsonb) from public,anon,authenticated;
-grant execute on function public.passo_worker_finish(uuid,uuid,jsonb) to service_role;
+revoke all on function passo_private.worker_finish_v2(uuid,uuid,jsonb),passo_private.worker_publish(uuid,uuid,jsonb),passo_private.worker_finish_v1(uuid,uuid,jsonb) from public,anon,authenticated;
 commit;
