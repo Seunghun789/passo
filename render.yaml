@@ -9,7 +9,7 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /healthz
-    autoDeployTrigger: commit
+    autoDeployTrigger: checksPass
     envVars:
       - key: SUPABASE_URL
         sync: false
