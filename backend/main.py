@@ -70,6 +70,9 @@ class Gateway:
 
 @asynccontextmanager
 async def lifespan(app):
+    # 화면 계산에 쓰는 무거운 라이브러리(pandas 등)는 서버가 켜질 때 미리 불러 둔다. 첫 요청이 기다리지 않고,
+    # Cloud Run 은 켜지는 동안 CPU 를 더 준다(startup boost)
+    import core.engine, core.insights, core.graph  # noqa: F401
     async with httpx.AsyncClient(timeout=15, follow_redirects=False, trust_env=False) as client:
         app.state.gateway = Gateway(client)
         yield
