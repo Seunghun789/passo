@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:  # 코드를 바꾸지 않고 다시 배포할 때(Actions 화면의 Run workflow)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -58,7 +59,7 @@ jobs:
   deploy:
     name: API 배포
     needs: [api, web]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Render에 이 커밋 배포 요청
@@ -86,7 +87,7 @@ jobs:
   cloudrun:
     name: API 배포 (Cloud Run)
     needs: [api, web]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
