@@ -121,6 +121,6 @@ jobs:
         env:
           URL: ${{ steps.deploy.outputs.url }}
         run: |
-          got=$(curl -sS --max-time 60 "$URL/healthz" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version",""))')
+          got=$(curl -sS --max-time 60 "$URL/health" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version",""))')  # /healthz 는 Cloud Run 이 막아 둔 주소
           echo "Cloud Run: $got / 이 커밋: ${GITHUB_SHA:0:7} / 주소: $URL"
           [ "$got" = "${GITHUB_SHA:0:7}" ]

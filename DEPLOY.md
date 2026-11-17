@@ -59,7 +59,7 @@ DB(Supabase)가 도쿄에 있어 API 도 도쿄에 둔다. 요청마다 1 vCPU, 
 - [ ] Google Cloud 콘솔에서 프로젝트를 만들고 결제 계정을 연결한다.
 - [ ] 콘솔 위의 Cloud Shell을 열고 `bash <(curl -fsSL https://raw.githubusercontent.com/Seunghun789/passo/main/deploy/cloud-run-setup.sh)`를 실행한다. 컨테이너 저장소 · 배포용 서비스 계정 · GitHub Actions 연결(이 저장소 main만)을 만든다.
 - [ ] 끝에 나온 세 줄을 GitHub 저장소 Settings → Secrets and variables → Actions → Variables에 `GCP_PROJECT` · `GCP_SERVICE_ACCOUNT` · `GCP_WIF_PROVIDER`로 넣는다(비밀값이 아니라 이름이다).
-- [ ] `main`에 푸시하면 CI가 통과한 뒤 'API 배포 (Cloud Run)'이 컨테이너를 만들어 `passo-api`(asia-northeast1)로 배포하고 `/healthz`의 `version`을 확인한다.
+- [ ] `main`에 푸시하면 CI가 통과한 뒤 'API 배포 (Cloud Run)'이 컨테이너를 만들어 `passo-api`(asia-northeast1)로 배포하고 `/health`의 `version`을 확인한다(Cloud Run은 `/healthz` 주소를 막아 두어 서버까지 오지 않는다).
 - [ ] 첫 배포 뒤 Cloud Run → passo-api → 새 버전 수정 및 배포 → 변수 및 보안 비밀에 Render와 같은 값(위 Render 항목에서 TZ를 뺀 여섯 개)을 넣는다. 다음 배포부터는 그대로 남는다.
 - [ ] Vercel의 `PASSO_API_URL`을 Cloud Run 주소로 바꾸고 다시 배포한다.
 
