@@ -48,7 +48,8 @@ Render에는 무료 백그라운드 워커가 없어서, 워커는 지금 Mac의
   - `TZ`: `Asia/Seoul`(파일에 들어 있다. "오늘"을 한국 날짜로 센다)
   - `SUPABASE_SECRET_KEY`: `sb_secret_`로 시작하는 키(관리 화면이 모든 워크스페이스를 셀 때만 쓴다)
   - `ADMIN_EMAILS`: 관리 화면을 볼 사람의 로그인 메일(여럿이면 쉼표로)
-- [ ] Manual Deploy를 누르고, 주소 뒤에 `/healthz`를 붙여 열었을 때 응답이 오는지 본다.
+- [ ] Settings → Build & Deploy에서 Branch는 `main`, Auto-Deploy는 On Commit으로 둔다. 이후 `main`에 푸시하면 저절로 배포된다.
+- [ ] 첫 배포가 끝나면 주소 뒤에 `/healthz`를 붙여 열었을 때 응답이 오는지 본다.
 - [ ] 생긴 주소(예: `https://passo-dev-api.onrender.com`)를 적어 둔다.
 
 ### Vercel (웹)

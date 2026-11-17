@@ -1,7 +1,7 @@
 services:
   - type: web
     name: passo-dev-api
-    branch: clone/goal-47aaee80-8328-4554-b140-1ed1e65408c9
+    branch: main
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
@@ -9,7 +9,7 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /healthz
-    autoDeployTrigger: off
+    autoDeployTrigger: commit
     envVars:
       - key: SUPABASE_URL
         sync: false
