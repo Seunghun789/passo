@@ -12,6 +12,8 @@ SAE=$SA@$PROJECT.iam.gserviceaccount.com
 gcloud config set project "$PROJECT" >/dev/null
 NUM=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
 RUNTIME=$NUM-compute@developer.gserviceaccount.com  # API 가 돌 때 쓰는 기본 서비스 계정
+# 방금 만든 계정 · 연결은 Google 안에 퍼지는 데 몇 초~1분 걸린다. 그 사이 권한 붙이기가 실패하면 10초 뒤 다시 한다
+retry() { for _ in 1 2 3 4 5 6 7 8; do "$@" && return 0; echo "  (방금 만든 것이 아직 퍼지는 중이에요. 10초 뒤 다시 해요)"; sleep 10; done; "$@"; }
 
 echo "1/5 필요한 API 켜기"
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com iamcredentials.googleapis.com sts.googleapis.com iam.googleapis.com
@@ -22,9 +24,9 @@ gcloud artifacts repositories describe passo --location=$REGION >/dev/null 2>&1 
 
 echo "3/5 배포용 서비스 계정과 권한(Cloud Run 배포 · 컨테이너 올리기 · 런타임 계정으로 실행)"
 gcloud iam service-accounts describe "$SAE" >/dev/null 2>&1 || gcloud iam service-accounts create $SA --display-name="passo GitHub deploy"
-gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$SAE" --role=roles/run.admin --condition=None >/dev/null
-gcloud artifacts repositories add-iam-policy-binding passo --location=$REGION --member="serviceAccount:$SAE" --role=roles/artifactregistry.writer >/dev/null
-gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --member="serviceAccount:$SAE" --role=roles/iam.serviceAccountUser >/dev/null
+retry gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$SAE" --role=roles/run.admin --condition=None >/dev/null
+retry gcloud artifacts repositories add-iam-policy-binding passo --location=$REGION --member="serviceAccount:$SAE" --role=roles/artifactregistry.writer >/dev/null
+retry gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" --member="serviceAccount:$SAE" --role=roles/iam.serviceAccountUser >/dev/null
 
 echo "4/5 GitHub Actions 연결(이 저장소 main 만)"
 gcloud iam workload-identity-pools describe github --location=global >/dev/null 2>&1 ||
@@ -35,7 +37,7 @@ gcloud iam workload-identity-pools providers describe passo --location=global --
     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
     --attribute-condition="assertion.repository=='$REPO' && assertion.ref=='refs/heads/main'"
 POOL=$(gcloud iam workload-identity-pools describe github --location=global --format='value(name)')
-gcloud iam service-accounts add-iam-policy-binding "$SAE" --role=roles/iam.workloadIdentityUser \
+retry gcloud iam service-accounts add-iam-policy-binding "$SAE" --role=roles/iam.workloadIdentityUser \
   --member="principalSet://iam.googleapis.com/$POOL/attribute.repository/$REPO" >/dev/null
 
 echo "5/5 끝. 아래 세 줄을 GitHub 저장소 변수(Variables)로 넣으세요"
