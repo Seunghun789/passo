@@ -5,11 +5,11 @@ import Workspace from './workspace';
 import Landing from './landing';
 export const dynamic='force-dynamic';
 export const maxDuration=300;
-export default async function Home({searchParams}:{searchParams:Promise<{workspace?:string,view?:string,period?:string}>}) {
+export default async function Home({searchParams}:{searchParams:Promise<{workspace?:string,view?:string,period?:string,deleted?:string}>}) {
  if(!configured()) return <Landing/>;
- const sb=await supabase();const {data}=await sb.auth.getClaims();const user=data?.claims;
- if(!user) return <Landing/>;  // 로그인하지 않은 첫 방문은 랜딩. 로그인해 있으면 랜딩 없이 앱으로
  const params=await searchParams;
+ const sb=await supabase();const {data}=await sb.auth.getClaims();const user=data?.claims;
+ if(!user) return <Landing deleted={params.deleted==='1'}/>;  // 로그인하지 않은 첫 방문은 랜딩. 로그인해 있으면 랜딩 없이 앱으로
  const workspaces=await api('/v1/workspaces');
  // 가입하고 처음 들어오면 워크스페이스를 하나 만들고 빈 올리기를 연다
  if(!workspaces.length){const {id}=await api('/v1/workspaces',{method:'POST',body:JSON.stringify({title:'내 워크스페이스'})});redirect(`/?workspace=${id}&view=upload`);}

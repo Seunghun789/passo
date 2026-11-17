@@ -35,9 +35,10 @@ export async function signup(form: FormData) {
   const password = String(form.get('password') || '');
   const next = safeNext(form.get('next'));
   if (!name || email.length > 254 || password.length < 8 || password.length > 1024) redirect('/login?mode=signup&error=signup');
+  if (form.get('agree') !== 'on') redirect('/login?mode=signup&error=agree');  // 약관 · 개인정보처리방침 동의와 만 14세 이상
   const sb = await supabase();
   const { data, error } = await sb.auth.signUp({ email, password,
-    options: { emailRedirectTo: callbackUrl(next), data: { full_name: name } } });
+    options: { emailRedirectTo: callbackUrl(next), data: { full_name: name, terms_agreed_at: new Date().toISOString(), terms_version: '2026-11-17' } } });
   if (error) redirect('/login?mode=signup&error=signup');
   if (!data.session) redirect('/login?notice=check-email');  // 메일의 확인 링크를 누르면 /auth/callback 으로 돌아온다
   await sb.rpc('passo_register_self', { display_name: name });
@@ -96,6 +97,16 @@ export async function login(form: FormData) {
   if (error) redirect('/login?error=credentials');
   await sb.rpc('passo_register_self', {});  // 메일 확인을 마친 새 계정 · 같은 이메일의 예전 계정을 잇는다
   redirect(safeNext(form.get('next')));
+}
+export async function deleteAccount(form: FormData) {
+  // [계정 지우기]: 계정 · 혼자 쓰는 워크스페이스(기록 · 원본 사진 · AI 기록)를 지운다. 다른 구성원이 있는 워크스페이스의 owner면 막힌다(409)
+  if (form.get('confirm') !== 'on') redirect('/account?error=confirm');
+  const r = await apiResponse('/v1/me/deletion', {method:'POST', body:JSON.stringify({confirm:true})}, true);
+  if (r.status === 409) redirect('/account?error=owner');
+  if (!r.ok) redirect('/account?error=delete');
+  const sb = await supabase();
+  await sb.auth.signOut({scope:'local'});  // 계정이 이미 없어도 이 브라우저의 로그인 쿠키를 지운다
+  redirect('/?deleted=1');
 }
 export async function logout() {
   const sb = await supabase();

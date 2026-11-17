@@ -7,7 +7,7 @@ passo는 세 부분으로 돈다. 로컬에서는 웹 3001, API 8003, 워커 Doc
 | 웹 | `apps/web` (3001) | Vercel | 화면, 로그인 |
 | API 서버 | `backend/` (8003) | Render (`render.yaml`) | 기록 세기, 묻기·주간 요약 AI 호출, DB 함수 부르기 |
 | 워커 | Docker `passo-worker-1` | Mac(지금) 또는 임대 서버 | 올린 종이 읽기(OCR·AI) |
-| DB·파일 | Supabase | Supabase(그대로) | 기록, 원본 파일. 마이그레이션 001~021 적용됨 |
+| DB·파일 | Supabase | Supabase(그대로) | 기록, 원본 파일. 마이그레이션 001~023 적용됨 |
 
 ## 알아 둘 것 세 가지
 

@@ -31,6 +31,11 @@ class Settings(BaseModel):
     website: str = Field(default='', max_length=300)
 
 
+class Confirm(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    confirm: Literal[True]
+
+
 class Role(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     role: Literal['확인하는 사람', '올리는 사람', '보는 사람']
@@ -112,6 +117,28 @@ def install_routes(app, session, gateway):
         await g.authorize(token, tid)
         await g.rpc(token, 'passo_member_remove', {'tid': tid, 'member': uid})
         return {'ok': True}
+
+    @app.post('/v1/workspaces/{tid}/members/{uid}/owner')
+    async def owner_transfer(tid: int, uid: int, token=Depends(session), g=Depends(gateway)):
+        """[owner 넘기기](주인만): 그 구성원이 주인이 되고, 넘긴 사람은 확인하는 사람으로 남는다."""
+        await g.authorize(token, tid)
+        await g.rpc(token, 'passo_owner_transfer', {'tid': tid, 'member': uid})
+        return {'ok': True}
+
+    @app.get('/v1/me/deletion')
+    async def deletion_preview(token=Depends(session), g=Depends(gateway)):
+        """[계정 지우기] 전에: 함께 지워질 워크스페이스와, 먼저 [owner 넘기기]를 해야 하는 워크스페이스."""
+        out = await g.rpc(token, 'passo_delete_me', {'dry_run': True}) or {}
+        return {'workspaces': out.get('workspaces', []), 'blocked': out.get('blocked', [])}
+
+    @app.post('/v1/me/deletion')
+    async def delete_me(body: Confirm, token=Depends(session), g=Depends(gateway)):
+        """[계정 지우기]: 계정 · 혼자 쓰는 워크스페이스(기록 · 원본 사진 · AI 기록)를 지운다. 되돌릴 수 없다."""
+        out = await g.rpc(token, 'passo_delete_me', {'dry_run': False}) or {}
+        if not out.get('deleted'):
+            raise HTTPException(409, '다른 구성원이 있는 워크스페이스는 먼저 owner를 넘겨 주세요.')
+        await g.remove_originals(out.get('paths') or [])
+        return {'deleted': True, 'workspaces': len(out.get('workspaces') or [])}
 
     @app.post('/v1/workspaces/{tid}/invites', status_code=201)
     async def invite(tid: int, body: Role, token=Depends(session), g=Depends(gateway)):

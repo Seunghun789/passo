@@ -7,8 +7,8 @@ const CASES:[string,string][]=[['제조 설비 점검','점검표 사진 · 이�
 const SKEL=['100%','70%','100%','55%','100%'];
 
 // 로그인하지 않은 첫 방문: 무슨 서비스인지 보여 주고 [바로 써 보기] · [로그인]으로 로그인 화면을 연다
-export default function Landing(){
- const [note,setNote]=useState(''),[cases,setCases]=useState(false),[step,setStep]=useState(0),menu=useRef<HTMLDivElement>(null);
+export default function Landing({deleted=false}:{deleted?:boolean}){
+ const [note,setNote]=useState(deleted?'계정을 지웠어요. 그동안 passo를 써 주셔서 고마워요.':''),[cases,setCases]=useState(false),[step,setStep]=useState(0),menu=useRef<HTMLDivElement>(null);
  useEffect(()=>{if(!note)return;const t=setTimeout(()=>setNote(''),3200);return()=>clearTimeout(t);},[note]);
  useEffect(()=>{  // 네 칸에 차례로 불이 들어온다. ④ 다음에는 다시 ①
   if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
@@ -37,6 +37,7 @@ export default function Landing(){
      :<>{SKEL.map((w,j)=><i key={j} className="skel" style={{width:w}}/>)}<p>{p}</p></>}</li>)}</ol>
    <div className="loop"><span>④에서 다시 ① 종이로 · 올릴수록 묻는 건 줄고, 답은 정확해져요</span></div>
   </main>
+  <footer className="landing-foot landing-inner"><span>passo · AI가 종이를 읽고 정리하는 서비스</span><a href="/terms">이용약관</a><a href="/privacy"><b>개인정보처리방침</b></a></footer>
   {note&&<p className="toast" role="status">{note}</p>}
  </div>;
 }

@@ -20,8 +20,8 @@ async function denied(name,fn) {
 try {
  await db.exec(`create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create schema storage;
  create table auth.users(id uuid primary key,banned_until timestamptz,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
- create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id),not_after timestamptz);
- create table auth.identities(user_id uuid references auth.users(id),provider text,provider_id text,identity_data jsonb);
+ create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,not_after timestamptz);
+ create table auth.identities(user_id uuid references auth.users(id) on delete cascade,provider text,provider_id text,identity_data jsonb);
  create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
  create function auth.uid() returns uuid language sql stable as $$select (auth.jwt()->>'sub')::uuid$$;
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -56,6 +56,7 @@ try {
  await db.exec(await readFile('db/migrations/019_accounts_and_members.sql','utf8'));
  await db.exec(await readFile('db/migrations/020_member_remove.sql','utf8'));
  await db.exec(await readFile('db/migrations/021_tenant_versions.sql','utf8'));
+ await db.exec(await readFile('db/migrations/022_account_deletion.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);
@@ -143,6 +144,7 @@ try {
  await (await import('../documents/edit-cases.mjs')).editCases({db,as,denied,check,uid});
  await (await import('../documents/undo-cases.mjs')).undoCases({db,as,denied,check,uid});
  await (await import('../documents/account-cases.mjs')).accountCases({db,as,denied,check,uid});
+ await (await import('../documents/deletion-cases.mjs')).deletionCases({db,as,denied,check,uid});
  await db.exec("update public.memberships set role='확인하는 사람' where user_id=3");
  check('role promotion visible on same token',(await as(3,"select public.passo_access(1,'review') as allowed"))[0].allowed===true);
  await db.exec("update public.memberships set role='보는 사람' where user_id=3");

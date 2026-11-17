@@ -235,7 +235,7 @@ create table public.eval_votes (             -- 평가 모드: 같은 질문의 
 create table public.ai_logs (                -- AI 호출 1번 = 1줄
   id bigint generated always as identity primary key,
   created_at timestamptz not null default now(),
-  tenant_id bigint references public.tenants(id) on delete set null,
+  tenant_id bigint references public.tenants(id) on delete cascade,
   model text not null,
   prompt text not null,
   answer text not null,

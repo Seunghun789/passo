@@ -1,5 +1,6 @@
 """Authentication boundary. Supabase validates tokens; RLS independently authorizes every query."""
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -52,6 +53,24 @@ class Gateway:
     async def authorize(self, token, tid, operation='read'):
         if not await self.rpc(token, 'passo_access', {'tid':tid, 'operation':operation}):
             raise HTTPException(403, '워크스페이스 접근 권한이 없습니다.')
+
+    async def remove_originals(self, paths, bucket='passo-originals'):
+        """[계정 지우기]로 DB 에서 지운 워크스페이스의 원본 파일을 저장소에서 지운다(022 가 경로를 돌려준다).
+        DB 는 이미 지웠으므로 실패해도 되돌리지 않고, 남은 개수만 로그에 남긴다(경로는 남기지 않는다)."""
+        key = os.environ.get('SUPABASE_STORAGE_SECRET_KEY', '')
+        removed = 0
+        if paths and key.startswith('sb_secret_'):
+            for i in range(0, len(paths), 1000):
+                part = paths[i:i + 1000]
+                try:
+                    r = await self.client.request('DELETE', self.url + '/storage/v1/object/' + bucket,
+                                                  headers={'apikey': key, 'Authorization': 'Bearer ' + key}, json={'prefixes': part})
+                    removed += len(part) if r.is_success else 0
+                except httpx.RequestError:
+                    pass
+        if removed < len(paths):
+            print(json.dumps({'originals': 'not_removed', 'count': len(paths) - removed}), flush=True)
+        return removed
 
     async def original_bytes(self, path, bucket='passo-originals'):
         # Called only AFTER session + tenant + object authorization. Never used for DB queries.
