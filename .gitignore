@@ -60,3 +60,6 @@ node_modules/
 #
 .env.worker
 .env.api
+
+# Local planning document
+AI_SaaS_clone.md
