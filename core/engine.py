@@ -2716,11 +2716,11 @@ def run_widget(K, spec, today=None):
 
 FIELD_KEYS = ("field", "groupby", "fields")
 # 말로 만든 보기의 꾸밈은 서비스가 하나로 정한다. AI가 쓴 크기·색 묶음·제목은 지우고,
-# 색과 글꼴은 대시보드의 다른 차트와 같은 Streamlit 테마를 따르며, 날짜·요일은 한국어로 쓴다.
+# 색과 글꼴은 대시보드의 다른 차트와 같게 쓰며, 날짜·요일은 한국어로 쓴다.
 STYLE_KEYS = ("$schema", "config", "width", "height", "autosize", "padding", "background", "title")
 MONTHS = [f"{m}월" for m in range(1, 13)]
-# 차트 계열 색. 강조색(청록, 버튼)과 대상 분류(주황, 지식그래프)를 빼고 고른 순서로, 색맹 구분 검사를 통과했다.
-CHART = ["#4F46E5", "#D97706", "#DB2777", "#65A30D", "#1F1F1F", "#A1A1AA"]
+# 차트 계열 색. 한 계열은 화면 강조색(청록)으로 그리고, 여러 계열은 청록 · 주황 · 분홍 · 남색 · 검정 · 회색 순으로 쓴다.
+CHART = ["#0F766E", "#D97706", "#DB2777", "#4F46E5", "#1F1F1F", "#A1A1AA"]
 VIEW_STYLE = {
     "locale": {"time": {"dateTime": "%Y. %m. %d. %A %X", "date": "%Y. %m. %d.", "time": "%H:%M", "periods": ["오전", "오후"],
                         "days": ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"],
@@ -2730,12 +2730,12 @@ VIEW_STYLE = {
     "view": {"stroke": None},
     "range": {"category": CHART},
     "mark": {"color": CHART[0]},
-    "bar": {"color": "#1F1F1F", "cornerRadiusEnd": 3},
+    "bar": {"color": CHART[0], "cornerRadiusEnd": 3},
     "line": {"color": CHART[0], "strokeWidth": 2},
-    "point": {"color": "#1F1F1F", "filled": True},
+    "point": {"color": CHART[0], "filled": True},
     "legend": {"orient": "bottom", "labelFontSize": 12, "labelColor": "#52525B", "titleFontSize": 12, "titleColor": "#71717A", "titleFontWeight": 500},
     "axis": {"labelFontSize": 12, "labelColor": "#71717A", "titleFontSize": 12, "titleColor": "#71717A", "titleFontWeight": 500,
-             "domainColor": "#E4E4E7", "tickColor": "#E4E4E7", "gridColor": "#F4F4F5"},
+             "domainColor": "#E4E4E7", "tickColor": "#E4E4E7", "gridColor": "#F1F1F1"},
     "title": {"fontSize": 14, "fontWeight": 600, "color": "#1F1F1F", "anchor": "start"},
 }
 VIEW_HEIGHT = 300

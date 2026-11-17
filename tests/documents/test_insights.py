@@ -138,7 +138,7 @@ def test_dashboard_counts_and_trend(monkeypatch):
     kinds = {w['title']: w for w in out['auto']}
     assert kinds['재고 점검 기록 수']['kind'] == 'number'
     trend = kinds['재고 점검 · 수량 추이']
-    assert trend['kind'] == 'vega' and trend['vega']['config']['range']['category'][0] == '#4F46E5'  # 대화로 만든 보기와 같은 꾸밈
+    assert trend['kind'] == 'vega' and trend['vega']['config']['range']['category'][0] == '#0F766E'  # 대화로 만든 보기와 같은 꾸밈
     assert {r['계열'] for r in trend['vega']['data']['values']} <= {'생수', '라면', '분류 안 됨'}
     w = out['widgets'][0]
     assert w['id'] == 4 and w['previous_label'] == '지난달' and w['evidence']['total'] == int(w['value'])

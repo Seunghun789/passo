@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 type Request=(path:string,init?:RequestInit)=>Promise<any>;
 type Options={models:string[],default_model:string,examples:string[],has_records:boolean};
 type Answer={question:string,text:string,how:string[],checked:string|null,left:number,evidence:Record<string,unknown>[]};
-const names:Record<string,string>={'claude-haiku-5-5':'빠르게 (Haiku)','claude-sonnet-5-5':'보통 (Sonnet)','claude-opus-5-5':'꼼꼼하게 (Opus)'};
+const names:Record<string,string>={'claude-haiku-5-5':'빠르게','claude-sonnet-5-5':'보통','claude-opus-5-5':'꼼꼼하게'};
 const show=(v:unknown)=>v===null||v===undefined||v===''?'—':typeof v==='object'?JSON.stringify(v):String(v);
 
 export default function Ask({request,go}:{request:Request,go:(view:string)=>void}){
@@ -23,7 +23,7 @@ export default function Ask({request,go}:{request:Request,go:(view:string)=>void
  {!!options?.examples.length&&<div className="ask-examples">{options.examples.map(x=><button type="button" key={x} onClick={()=>setQuestion(x)}>{x}</button>)}</div>}
  <form className="ask-form" onSubmit={send}>
   <label>질문<input value={question} onChange={e=>setQuestion(e.target.value)} maxLength={500} placeholder="예: 최근에 기준을 넘은 기록은? / 이번 주 미팅은 누구야?"/></label>
-  <label>답하는 모델<select value={model} onChange={e=>setModel(e.target.value)}>{(options?.models||[]).map(m=><option key={m} value={m}>{names[m]||m}</option>)}</select></label>
+  <label>답하는 방식<select value={model} onChange={e=>setModel(e.target.value)}>{(options?.models||[]).map(m=><option key={m} value={m}>{names[m]||m}</option>)}</select></label>
   <button className="primary" disabled={busy||!options}>묻기</button>
  </form>
  {busy&&<p className="info" role="status">기록을 찾는 중이에요...</p>}
