@@ -4,6 +4,7 @@ import json
 import os
 import threading
 import time
+from datetime import date
 
 import httpx
 from fastapi import Depends, HTTPException
@@ -17,6 +18,7 @@ class Question(BaseModel):
 
 
 KEPT, KEPT_MAX, KEPT_LOCK = {}, 16, threading.Lock()  # 워크스페이스 번호 → (바뀐 횟수, engine.load 가 읽어 둔 표)
+MEMO_MAX = 12  # 워크스페이스마다 다시 쓸 화면 계산 결과 수(기간 네 개 × 화면 몇 개)
 
 
 def kept_tables(http, g, tid):
@@ -34,6 +36,27 @@ def kept_tables(http, g, tid):
         while len(KEPT) > KEPT_MAX:
             KEPT.pop(next(iter(KEPT)))
     return kept
+
+
+def remembered(t, name, key, make):
+    """확정 지식이 그대로이고 같은 날 · 같은 입력(key)이면 앞 요청이 센 결과를 다시 준다. make 는 그 결과를 새로 센다.
+    지식이 바뀌면 kept_tables 가 빈 자리를 주므로 함께 비워진다. 이번 주 · 기한처럼 날에 따라 달라지는 숫자가 있어 오늘 날짜를 열쇠에 넣는다.
+    결과는 여러 요청이 함께 쓰므로 고치지 않고 그대로 돌려줄 것만 넣는다(부른 사람에 따라 다른 값은 밖에서 붙인다)."""
+    kept = getattr(t, 'cache', None)
+    if kept is None:
+        return make()
+    k = json.dumps([name, date.today().isoformat(), key], ensure_ascii=False, sort_keys=True, default=str)
+    with KEPT_LOCK:
+        memo = kept.setdefault('_memo', {})
+        if k in memo:
+            memo[k] = memo.pop(k)  # 가장 최근에 쓴 것이 뒤로 간다
+            return memo[k]
+    out = make()
+    with KEPT_LOCK:
+        memo[k] = out
+        while len(memo) > MEMO_MAX:
+            memo.pop(next(iter(memo)))
+    return out
 
 
 def open_reader(g, token, tid):

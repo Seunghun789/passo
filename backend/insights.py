@@ -78,17 +78,25 @@ class ChatAction(BaseModel):
     title: str | None = Field(default=None, max_length=100)
 
 
+class State(dict):
+    """한 요청이 읽은 것. 확정 지식 K 는 처음 S['K'] 를 볼 때 묶는다. 앞에서 센 결과를 다시 쓰는 요청(backend.ask.remembered)은 묶지 않고 끝난다."""
+    def __missing__(self, key):
+        if key != 'K':
+            raise KeyError(key)
+        from core import engine
+        self['K'] = engine.load(self['t'])
+        return self['K']
+
+
 def snapshot(g, token, tid):
     """확정 지식 K, 자동화 · 지표 줄, 기다리는 지표 · 업무 제안. 한 번 읽어 여러 카드를 센다."""
     from backend.ask import open_reader
-    from core import engine
     t, http = open_reader(g, token, tid)
     try:
-        K = engine.load(t)
-        S = {'t': t, 'K': K,
-             'autos': t.get('automations', select='id,spec,status', order='id'),
-             'widgets': t.get('widgets', select='id,spec,status', order='id'),
-             'proposals': t.get('proposals', select='id,kind,payload', status='eq.대기', kind='in.(지표,업무)', order='id')}
+        S = State({'t': t,
+                   'autos': t.get('automations', select='id,spec,status', order='id'),
+                   'widgets': t.get('widgets', select='id,spec,status', order='id'),
+                   'proposals': t.get('proposals', select='id,kind,payload', status='eq.대기', kind='in.(지표,업무)', order='id')})
         return S, http
     except BaseException:
         http.close()
@@ -185,6 +193,8 @@ def chat_row(c):
 
 
 def install_routes(app, session, gateway):
+    from backend.ask import remembered
+
     async def run(g, token, tid, work):
         def job():
             S, http = snapshot(g, token, tid)
@@ -235,7 +245,7 @@ def install_routes(app, session, gateway):
                     'more': [{'title': c['title'], 'count': c['count']} for c in hit[ins.HOME_MAX:]],
                     'quiet': [c['title'] for c in cards if not c['count']],
                     'glance': ins.glance(K, [w['spec'] for w in S['widgets'] if w['status'] == '올림'], period) if K['types'] else []}
-        return await run(g, token, tid, work)
+        return await run(g, token, tid, lambda S: remembered(S['t'], 'home', [period, S['autos'], S['widgets']], lambda: work(S)))
 
     # ---- 자동화 ----
 
@@ -251,12 +261,13 @@ def install_routes(app, session, gateway):
             _, rules = ins.suggestions(K, taken)
             asked = [q for q in S['proposals'] if q['kind'] == '업무' and q['payload'].get('title') not in taken
                      and engine.valid_spec(K, q['payload'])]
-            return {'can_edit': editable, 'has_records': bool(K['types']),
+            return {'has_records': bool(K['types']),
                     'enabled': [{'id': a['id'], **ins.automation_card(K, a['spec'], period)} for a in autos if a['status'] == '켜짐'],
                     'off': [{'id': a['id'], 'title': a['spec'].get('title')} for a in autos if a['status'] == '꺼짐'],
                     'suggestions': [{'source': 'proposal', 'id': q['id'], **ins.suggestion_card(K, q['payload'])} for q in asked] +
                                    [{'source': 'rule', **ins.suggestion_card(K, s)} for s in rules]}
-        return await run(g, token, tid, work)
+        return await run(g, token, tid, lambda S: {'can_edit': editable,
+                                                     **remembered(S['t'], 'automations', [period, S['autos'], S['proposals']], lambda: work(S))})
 
     async def resolve(g, token, tid, kind, body):
         """[켜기] · [올리기]할 규칙을 서버가 다시 찾는다. (규칙, 넣은 뒤 할 일)."""
@@ -377,7 +388,7 @@ def install_routes(app, session, gateway):
             picks, _ = ins.suggestions(K, taken)
             asked = [q for q in S['proposals'] if q['kind'] == '지표' and q['payload'].get('title') not in taken]
             shown, missing = engine.gallery(K, taken | {q['payload'].get('title') for q in asked}) if K['types'] else ([], [])
-            return {'can_edit': editable, 'has_records': bool(K['types']), 'period': period,
+            return {'has_records': bool(K['types']), 'period': period,
                     'auto': [ins.view(K, s, period) for s in engine.auto_widgets(K)],
                     'widgets': [{'id': w['id'], **ins.view(K, w['spec'], period)} for w in up],
                     'down': [{'id': w['id'], 'title': w['spec'].get('title')} for w in widgets if w['status'] == '내림'],
@@ -387,7 +398,8 @@ def install_routes(app, session, gateway):
                                  **ins.view(K, s, period)} for s in shown],
                     'gallery_missing': [{'shape': a, 'why': b} for a, b in missing],
                     'pick_options': pick_options(K)}
-        return await run(g, token, tid, work)
+        return await run(g, token, tid, lambda S: {'can_edit': editable,
+                                                     **remembered(S['t'], 'dashboard', [period, S['widgets'], S['proposals']], lambda: work(S))})
 
     @app.post('/v1/workspaces/{tid}/widgets/preview')
     async def preview(tid: int, body: Preview, period: str = PERIOD, token=Depends(session), g=Depends(gateway)):

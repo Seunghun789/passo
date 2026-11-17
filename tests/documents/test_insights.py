@@ -302,3 +302,41 @@ def test_recommend_keeps_only_valid_new_rules(monkeypatch):
     proposed = [b for n, b in g.calls if n == 'passo_rule_propose']
     assert len(proposed) == 1 and proposed[0]['rule_kind'] == '업무' and proposed[0]['rule']['type'] == '재고 점검'
     assert [n for n, _ in g.calls][0] == 'passo_log_ai'
+
+
+def test_dashboard_reuses_result_until_knowledge_or_widgets_change(monkeypatch):
+    """확정 지식이 그대로(같은 kept)이고 지표 줄도 그대로면 센 결과를 다시 쓴다. 지표를 내리거나 지식이 바뀌면(새 kept) 다시 센다.
+    [올리기] 같은 단추가 보일지(can_edit)는 부른 사람마다 따로 본다."""
+    from core import insights as ins
+    widgets = [{'id': 4, 'status': '올림', 'spec': {'title': '수량 10 미만 건수', 'kind': 'count_where', 'type': '재고 점검',
+                                                   'conditions': [{'prop': '수량', 'op': '<', 'value': '30', 'value_prop': None}]}}]
+    data, state = tables(widgets=widgets), {'kept': {}, 'reads': 0}
+    def open_reader(gateway, token, tid):
+        def fetch(table, params):
+            state['reads'] += table == 'records'
+            rows = data.get(table, [])
+            return [r for r in rows if r.get('status') == params['status'][3:]] if params.get('status', '').startswith('eq.') else rows
+        return Reader(fetch, tid, state['kept']), SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(ask_module, 'open_reader', open_reader)
+    views = {'n': 0}
+    real = ins.view
+    monkeypatch.setattr(ins, 'view', lambda *a, **k: (views.__setitem__('n', views['n'] + 1), real(*a, **k))[1])
+    g = Gateway()
+    app = FastAPI(); insights.install_routes(app, lambda: 'caller', lambda: g); c = TestClient(app)
+
+    first = c.get('/v1/workspaces/7/dashboard').json()
+    counted = views['n']
+    assert counted and state['reads'] == 1
+    g.ops = ('read',)  # 같은 워크스페이스를 보기만 하는 사람
+    again = c.get('/v1/workspaces/7/dashboard').json()
+    assert views['n'] == counted and state['reads'] == 1
+    assert again['can_edit'] is False and first['can_edit'] is True and {**again, 'can_edit': True} == first
+
+    data['widgets'] = [{**widgets[0], 'status': '내림'}]  # 지표 줄이 바뀌면 다시 센다
+    down = c.get('/v1/workspaces/7/dashboard').json()
+    assert views['n'] > counted and down['widgets'] == [] and down['down'][0]['id'] == 4
+
+    state['kept'] = {}  # 확정 지식이 바뀌면(바뀐 횟수가 오르면) 읽어 둔 표와 함께 센 결과도 버린다
+    data['records'] = data['records'][:2]
+    fresh = c.get('/v1/workspaces/7/dashboard').json()
+    assert state['reads'] == 2 and fresh != down

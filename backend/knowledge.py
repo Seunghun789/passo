@@ -81,6 +81,7 @@ def entity_table(K):
 
 def install_routes(app, session, gateway):
     from backend.insights import can_review, log_usage, ai_kit, snapshot, read_failed
+    from backend.ask import remembered
     import asyncio
     import httpx
 
@@ -127,8 +128,9 @@ def install_routes(app, session, gateway):
         from core import engine
         from core.edits import card_text
         editable = await can_review(g, token, tid)
-        return await run(g, token, tid, lambda S: {'can_edit': editable, 'has_records': bool(S['K']['types']),
-                                                     'classes': entity_table(S['K']), 'links': class_links(S['K']),
+        return await run(g, token, tid, lambda S: {'can_edit': editable,
+                                                     **remembered(S['t'], 'entities', [], lambda: {'has_records': bool(S['K']['types']),
+                                                                                                   'classes': entity_table(S['K']), 'links': class_links(S['K'])}),
                                                      'cards': edit_cards(S), 'dtypes': list(engine.DTYPE_KO.items()),
                                                      'undoable': [{'id': q['id'], 'kind': q['kind'], 'text': card_text(q), 'at': q['decided_at']}
                                                                   for q in S['done_cards']]})
@@ -187,7 +189,7 @@ def install_routes(app, session, gateway):
         def work(S):
             K, pend = S['K'], S['links_pending']
             nodes, edges = graph_data(K, pend, entities)
-            return {'can_edit': editable, 'has_records': bool(K['types']), 'nodes': nodes, 'edges': edges, 'cards': edit_cards(S),
+            return {'has_records': bool(K['types']), 'nodes': nodes, 'edges': edges,
                     'props': {T: [{'name': p['name'], 'dtype': p['dtype'], 'unit': p.get('unit'), 'description': p.get('description')}
                                   for p in K['props'][T]] for T in K['types']},
                     'members': {C: [e['name'] for e in engine.members(K, C)] for C in K['classes']},
@@ -198,7 +200,8 @@ def install_routes(app, session, gateway):
                                  'reason': q['payload'].get('reason'), 'counted': (q.get('evidence') or {}).get('counted') or engine.pair_evidence(K, q['payload']['from'], q['payload']['to'])}
                                 for q in pend],
                     'refs': engine.refs(K), 'kinds': llm.LINK_KINDS}
-        return await run(g, token, tid, work)
+        return await run(g, token, tid, lambda S: {'can_edit': editable, 'cards': edit_cards(S),
+                                                     **remembered(S['t'], 'graph', [entities, S['links_pending']], lambda: work(S))})
 
     async def propose(g, token, tid, K, a, b, kind, name, reason, user):
         from core import engine, llm
