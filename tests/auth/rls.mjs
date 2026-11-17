@@ -55,6 +55,7 @@ try {
  await db.exec(await readFile('db/migrations/018_undo_edits_and_cut.sql','utf8'));
  await db.exec(await readFile('db/migrations/019_accounts_and_members.sql','utf8'));
  await db.exec(await readFile('db/migrations/020_member_remove.sql','utf8'));
+ await db.exec(await readFile('db/migrations/021_tenant_versions.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);
@@ -102,6 +103,13 @@ try {
  const edited=(await edit(1))[0];
  check('dash to zero preserves raw and normalized state',edited.data.quantity.raw===0 && edited.data.quantity.value===0 && edited.data.quantity.status==='value');
  check('patch preserves other cells',edited.data.other===0);
+ const version=async(n,tid)=>(await as(n,'select v from public.tenant_versions where tenant_id=$1',[tid]))[0]?.v;
+ const before=Number(await version(1,1));
+ check('writes to records count as a workspace change',before>0);
+ await db.exec("insert into public.records(tenant_id,type_name,occurred_at,data) values(1,'A','2026-11-14','{}')"); await db.exec('delete from public.records where id>2');
+ check('worker insert and delete bump the workspace version',Number(await version(1,1))>before);
+ check('member of another workspace cannot read its version',(await version(2,1))===undefined);
+ await denied('members cannot change the version directly',()=>as(1,'update public.tenant_versions set v=0'));
  await denied('stale edit conflicts',()=>edit(1));
  await denied('arbitrary JSON cell rejected',()=>edit(1,1,1,edited.data,{quantity:{status:'value',value:999}}));
  await denied('new undeclared label rejected',()=>edit(1,1,1,edited.data,{injected:1}));

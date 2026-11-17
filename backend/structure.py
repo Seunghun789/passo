@@ -8,8 +8,9 @@ class Reader:
     """engine 이 확정 지식을 읽을 때 쓰는 읽기 전용 창구. 한 워크스페이스의 줄만 읽는다."""
     in_memory = True  # engine.load 가 읽은 표를 붙들어 두지 않고, 조직 설명은 읽지 않는다
 
-    def __init__(self, fetch, tid):
+    def __init__(self, fetch, tid, cache=None):
         self.fetch, self.id, self.waiting = fetch, tid, None
+        self.cache = cache  # engine.load 가 읽은 표를 담아 다음 요청과 나누는 자리. None 이면 매번 새로 읽는다
 
     def get(self, table, **params):
         from core.record_cells import decode_record

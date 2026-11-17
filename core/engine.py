@@ -182,7 +182,9 @@ def load(t):
              ("entity_links", dict(select="id,link_id,from_entity,to_entity,attrs")),
              ("property_defs", dict(select="type_name,name,dtype,unit,description,is_entity,ref_class,position", order="position,id")),
              ("entity_aliases", dict(select="entity_id,alias"))]
-    kept = {} if getattr(t, "in_memory", False) else t.kept
+    kept = getattr(t, "cache", None)  # API 서버: 워크스페이스가 그대로면 앞 요청이 읽어 둔 표(backend/ask.py open_reader)
+    if kept is None:
+        kept = {} if getattr(t, "in_memory", False) else t.kept
     todo = [(table, params) for table, params in reads if table not in kept]
     for (table, _), rows in zip(todo, db.together([lambda table=table, params=params: t.get(table, **params) for table, params in todo])):
         kept[table] = rows
@@ -195,6 +197,7 @@ def load(t):
         "alias": {(a["type_name"], a["alias"]): a["prop_name"] for a in aliases},
         "links": links,
         "records": records,
+        "_frames": {},  # frame() 이 만든 표. 이 K 를 쓰는 동안만 산다
         "entities": {e["id"]: e for e in entities},
         "ealias": {},
         "elinks": elinks,
@@ -330,7 +333,19 @@ def _numeric(df, defs):
 
 
 def frame(K, T):
-    """기록 종류의 기록 표(최근 기록이 위) 또는 분류의 대상 표."""
+    """기록 종류의 기록 표(최근 기록이 위) 또는 분류의 대상 표.
+    한 화면을 세는 동안 같은 표를 수백 번 부르므로, 같은 K(기록 목록이 같은 것)에서 만든 표는 K["_frames"]에 두고 복사해 준다.
+    기간으로 거른 K(`{**K, "records": ...}`)는 기록 목록이 달라 따로 만든다. 대상을 바꾸면(create_entities · set_attr) 비운다."""
+    memo = K.get("_frames")
+    if memo is None:
+        return _frame(K, T)
+    key = (T, id(K["records"]))
+    if key not in memo:
+        memo[key] = (K["records"], _frame(K, T))  # 기록 목록을 붙들어 두어 같은 id 가 다른 목록에 다시 쓰이지 않게 한다
+    return memo[key][1].copy()
+
+
+def _frame(K, T):
     if T in K["classes"]:
         return entity_frame(K, T)
     if T not in K["types"]:
@@ -1794,6 +1809,7 @@ def create_entities(t, K, C, names, attrs=None):
     for e in made:
         K["entities"][e["id"]] = e
         K["ealias"].setdefault(e["name"], []).append(e["id"])
+    K.get("_frames", {}).clear()
 
 
 def answer_class(t, q, ok):
@@ -1831,6 +1847,7 @@ def set_attr(t, K, eid, attr, value):
     attrs = {**K["entities"][eid]["attrs"], attr: plain(value)}
     t.patch("entities", {"attrs": attrs}, id=f"eq.{eid}")
     K["entities"][eid]["attrs"] = attrs
+    K.get("_frames", {}).clear()
 
 
 def rename_spec(spec, T, old, new):
@@ -2249,8 +2266,16 @@ def period_range(name, today=None):
 
 
 def in_period(K, start, end):
-    """그 기간 안의 기록만 남긴 지식. 앞 기간 값은 그날까지의 기록으로 다시 센다."""
-    return {**K, "records": [r for r in K["records"] if start.isoformat() <= r["occurred_at"] <= end.isoformat()]}
+    """그 기간 안의 기록만 남긴 지식. 앞 기간 값은 그날까지의 기록으로 다시 센다.
+    지표마다 같은 기간을 다시 거르므로, 같은 K 에서 거른 것은 K["_frames"]에 두어 그 표(frame)까지 함께 다시 쓴다."""
+    memo = K.get("_frames")
+    key = ("기간", id(K["records"]), start.isoformat(), end.isoformat())
+    if memo is not None and key in memo:
+        return memo[key][1]
+    out = {**K, "records": [r for r in K["records"] if start.isoformat() <= r["occurred_at"] <= end.isoformat()]}
+    if memo is not None:
+        memo[key] = (K["records"], out)
+    return out
 
 
 def period_values(K, spec, name):

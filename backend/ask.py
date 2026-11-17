@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import threading
 import time
 
 import httpx
@@ -15,8 +16,29 @@ class Question(BaseModel):
     model: str | None = Field(default=None, max_length=100)
 
 
+KEPT, KEPT_MAX, KEPT_LOCK = {}, 16, threading.Lock()  # 워크스페이스 번호 → (바뀐 횟수, engine.load 가 읽어 둔 표)
+
+
+def kept_tables(http, g, tid):
+    """워크스페이스의 확정 지식이 마지막으로 읽은 뒤 그대로면 읽어 둔 표를, 바뀌었으면 빈 자리를 준다.
+    바뀐 횟수(021 tenant_versions)는 부른 사람의 권한으로 읽어서, 구성원이 아니거나 읽지 못하면 나누지 않는다."""
+    r = http.get(g.url + '/rest/v1/tenant_versions', params={'tenant_id': f'eq.{tid}', 'select': 'v'})
+    rows = r.json() if r.is_success else []
+    if not rows:
+        return None
+    v = rows[0]['v']
+    with KEPT_LOCK:
+        hit = KEPT.pop(tid, None)
+        kept = hit[1] if hit and hit[0] == v else {}
+        KEPT[tid] = (v, kept)  # 가장 최근에 쓴 것이 뒤로 간다
+        while len(KEPT) > KEPT_MAX:
+            KEPT.pop(next(iter(KEPT)))
+    return kept
+
+
 def open_reader(g, token, tid):
-    """engine 이 읽는 표를 부른 사람의 권한으로 읽는 창구. 1,000줄이 넘는 표는 이어서 읽는다."""
+    """engine 이 읽는 표를 부른 사람의 권한으로 읽는 창구. 1,000줄이 넘는 표는 이어서 읽는다.
+    워크스페이스가 바뀌지 않았으면 앞 요청이 읽어 둔 표를 다시 쓴다(kept_tables)."""
     from backend.structure import Reader
     http = httpx.Client(timeout=30, trust_env=False, headers={'apikey': g.key, 'Authorization': 'Bearer ' + token})
 
@@ -37,7 +59,7 @@ def open_reader(g, token, tid):
             out += batch
             if len(batch) < 1000:
                 return out
-    return Reader(fetch, tid), http
+    return Reader(fetch, tid, kept_tables(http, g, tid)), http
 
 
 def install_routes(app, session, gateway):
