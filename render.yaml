@@ -9,7 +9,7 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /healthz
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: off  # GitHub Actions 의 'API 배포'가 CI 를 통과한 커밋을 Deploy Hook 으로 배포한다
     envVars:
       - key: SUPABASE_URL
         sync: false

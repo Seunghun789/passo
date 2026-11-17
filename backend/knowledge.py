@@ -89,12 +89,17 @@ def install_routes(app, session, gateway):
         def job():
             S, http = snapshot(g, token, tid)
             try:
-                S['links_pending'] = S['t'].get('proposals', select='id,kind,payload,evidence', status='eq.대기', kind='eq.연결', order='id')
-                S['cards'] = [q for q in S['t'].get('proposals', select='id,kind,payload,evidence', status='eq.대기', order='id',
-                                                     **{'evidence->>user': 'eq.true'}) if q['kind'] in EDIT_KINDS]
-                S['done_cards'] = [q for q in S['t'].get('proposals', select='id,kind,payload,evidence,decided_at', status='eq.승인',
-                                                          order='decided_at.desc', limit=40, **{'evidence->>user': 'eq.true'})
-                                   if q['kind'] in UNDOABLE and not q['payload'].get('undone') and q['payload'].get('op') != '칸 더하기'][:10]
+                from core import db
+                t = S['t']
+                pending, cards, done = db.together([  # 서로 기다릴 필요 없는 읽기는 함께 보낸다
+                    lambda: t.get('proposals', select='id,kind,payload,evidence', status='eq.대기', kind='eq.연결', order='id'),
+                    lambda: t.get('proposals', select='id,kind,payload,evidence', status='eq.대기', order='id', **{'evidence->>user': 'eq.true'}),
+                    lambda: t.get('proposals', select='id,kind,payload,evidence,decided_at', status='eq.승인',
+                                  order='decided_at.desc', limit=40, **{'evidence->>user': 'eq.true'})])
+                S['links_pending'] = pending
+                S['cards'] = [q for q in cards if q['kind'] in EDIT_KINDS]
+                S['done_cards'] = [q for q in done if q['kind'] in UNDOABLE and not q['payload'].get('undone')
+                                   and q['payload'].get('op') != '칸 더하기'][:10]
                 return work(S)
             finally:
                 http.close()
@@ -124,10 +129,9 @@ def install_routes(app, session, gateway):
     @app.get('/v1/workspaces/{tid}/entities')
     async def entities(tid: int, token=Depends(session), g=Depends(gateway)):
         """분류 탭마다 대상 표. 대상을 가리키는 칸이 든 종이를 올리면 저절로 채워진다."""
-        await g.authorize(token, tid)
+        _, editable = await asyncio.gather(g.authorize(token, tid), can_review(g, token, tid))  # 권한 두 가지를 함께 본다
         from core import engine
         from core.edits import card_text
-        editable = await can_review(g, token, tid)
         return await run(g, token, tid, lambda S: {'can_edit': editable,
                                                      **remembered(S['t'], 'entities', [], lambda: {'has_records': bool(S['K']['types']),
                                                                                                    'classes': entity_table(S['K']), 'links': class_links(S['K'])}),
@@ -181,10 +185,9 @@ def install_routes(app, session, gateway):
     @app.get('/v1/workspaces/{tid}/graph')
     async def graph(tid: int, entities: bool = Query(False), token=Depends(session), g=Depends(gateway)):
         """점 · 선(확정 실선, 확인할 관계 점선), 확정한 관계 목록, 관계 제안 카드, [이어 보기]에 고를 칸."""
-        await g.authorize(token, tid)
+        _, editable = await asyncio.gather(g.authorize(token, tid), can_review(g, token, tid))  # 권한 두 가지를 함께 본다
         from core import engine, llm
         from core.graph import graph_data, link_sentence, stated
-        editable = await can_review(g, token, tid)
 
         def work(S):
             K, pend = S['K'], S['links_pending']

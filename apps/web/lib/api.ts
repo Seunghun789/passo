@@ -2,9 +2,8 @@ import 'server-only';
 import { supabase } from './supabase';
 import { redirect } from 'next/navigation';
 export async function apiResponse(path: string, init: RequestInit = {}, passthrough=false) {
+  // proxy 가 이 요청의 세션을 이미 새로 고치고 확인했다. 토큰은 API 서버가 Supabase 로 다시 확인한다(틀리면 401 → 로그인)
   const sb = await supabase();
-  const { data: { user }, error } = await sb.auth.getUser();
-  if (error || !user) redirect('/login');
   const { data: { session } } = await sb.auth.getSession();
   if (!session) redirect('/login');
   const r = await fetch(process.env.PASSO_API_URL! + path, {

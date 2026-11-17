@@ -48,7 +48,7 @@ Render에는 무료 백그라운드 워커가 없어서, 워커는 지금 Mac의
   - `TZ`: `Asia/Seoul`(파일에 들어 있다. "오늘"을 한국 날짜로 센다)
   - `SUPABASE_SECRET_KEY`: `sb_secret_`로 시작하는 키(관리 화면이 모든 워크스페이스를 셀 때만 쓴다)
   - `ADMIN_EMAILS`: 관리 화면을 볼 사람의 로그인 메일(여럿이면 쉼표로)
-- [ ] Settings → Build & Deploy에서 Branch는 `main`, Auto-Deploy는 After CI Checks Pass로 둔다. `main`에 푸시하면 GitHub Actions의 CI(API 테스트 · DB 권한 테스트 · 웹 빌드)가 돌고, 모두 통과한 커밋만 저절로 배포된다.
+- [ ] Settings → Build & Deploy에서 Branch는 `main`, Auto-Deploy는 Off로 둔다. 같은 화면의 Deploy Hook 주소를 GitHub 저장소 Settings → Secrets and variables → Actions에 `RENDER_DEPLOY_HOOK_URL`로 넣는다. `main`에 푸시하면 GitHub Actions의 CI(API 테스트 · DB 권한 테스트 · 웹 빌드)가 돌고, 모두 통과하면 'API 배포'가 그 커밋을 Render에 배포한 뒤 `/healthz`의 `version`이 그 커밋이 될 때까지 기다린다.
 - [ ] 첫 배포가 끝나면 주소 뒤에 `/healthz`를 붙여 열었을 때 응답이 오는지 본다.
 - [ ] 생긴 주소(예: `https://passo-dev-api.onrender.com`)를 적어 둔다.
 

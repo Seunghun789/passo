@@ -93,10 +93,12 @@ def snapshot(g, token, tid):
     from backend.ask import open_reader
     t, http = open_reader(g, token, tid)
     try:
-        S = State({'t': t,
-                   'autos': t.get('automations', select='id,spec,status', order='id'),
-                   'widgets': t.get('widgets', select='id,spec,status', order='id'),
-                   'proposals': t.get('proposals', select='id,kind,payload', status='eq.대기', kind='in.(지표,업무)', order='id')})
+        from core import db
+        autos, widgets, proposals = db.together([  # 서로 기다릴 필요 없는 읽기는 함께 보낸다
+            lambda: t.get('automations', select='id,spec,status', order='id'),
+            lambda: t.get('widgets', select='id,spec,status', order='id'),
+            lambda: t.get('proposals', select='id,kind,payload', status='eq.대기', kind='in.(지표,업무)', order='id')])
+        S = State({'t': t, 'autos': autos, 'widgets': widgets, 'proposals': proposals})
         return S, http
     except BaseException:
         http.close()
@@ -134,6 +136,19 @@ def ai_kit(calls):
     sink = lambda t, m, prompt, answer, used_in, used_out, started=None: calls.append(
         {'model': m, 'prompt': prompt, 'answer': answer, 'input_tokens': used_in, 'output_tokens': used_out})
     return anthropic.Anthropic(**llm.connect(os.environ)), sink
+
+
+SHORT = 10  # 아직 올리지 않은 추천 카드에 보내는 근거 표 줄 수. 올린 지표 · 켠 자동화는 core.insights.ROWS_MAX 그대로
+
+
+def short(card):
+    """추천 카드는 수백 장이라 근거 표를 앞 SHORT 줄만, 빈 칸은 빼고 보낸다(몇 줄인지는 그대로). 근거 표는 빈 칸을 '—'로 그려 보이는 것은 같다.
+    달력은 날짜를 누르면 근거 줄의 칸을 모두 보여 주므로 그대로."""
+    ev = card.get('evidence')
+    if card.get('kind') == 'calendar' or not isinstance(ev, dict) or not ev.get('rows'):
+        return card
+    rows = [{**r, 'values': {k: v for k, v in r['values'].items() if v is not None}} for r in ev['rows'][:SHORT]]
+    return {**card, 'evidence': {**ev, 'rows': rows}}
 
 
 def pick_spec(K, p):
@@ -251,9 +266,8 @@ def install_routes(app, session, gateway):
 
     @app.get('/v1/workspaces/{tid}/automations')
     async def automations(tid: int, period: str = PERIOD, token=Depends(session), g=Depends(gateway)):
-        await g.authorize(token, tid)
+        _, editable = await asyncio.gather(g.authorize(token, tid), can_review(g, token, tid))  # 권한 두 가지를 함께 본다
         from core import engine, insights as ins
-        editable = await can_review(g, token, tid)
 
         def work(S):
             K, autos = S['K'], S['autos']
@@ -264,8 +278,8 @@ def install_routes(app, session, gateway):
             return {'has_records': bool(K['types']),
                     'enabled': [{'id': a['id'], **ins.automation_card(K, a['spec'], period)} for a in autos if a['status'] == '켜짐'],
                     'off': [{'id': a['id'], 'title': a['spec'].get('title')} for a in autos if a['status'] == '꺼짐'],
-                    'suggestions': [{'source': 'proposal', 'id': q['id'], **ins.suggestion_card(K, q['payload'])} for q in asked] +
-                                   [{'source': 'rule', **ins.suggestion_card(K, s)} for s in rules]}
+                    'suggestions': [short({'source': 'proposal', 'id': q['id'], **ins.suggestion_card(K, q['payload'])}) for q in asked] +
+                                   [short({'source': 'rule', **ins.suggestion_card(K, s)}) for s in rules]}
         return await run(g, token, tid, lambda S: {'can_edit': editable,
                                                      **remembered(S['t'], 'automations', [period, S['autos'], S['proposals']], lambda: work(S))})
 
@@ -377,9 +391,8 @@ def install_routes(app, session, gateway):
     @app.get('/v1/workspaces/{tid}/dashboard')
     async def dashboard(tid: int, period: str = PERIOD, token=Depends(session), g=Depends(gateway)):
         """기록 현황(저절로), 올린 지표, 추천 지표(규칙 · AI), 보기 고르기, 골라서 만들기의 고를 거리."""
-        await g.authorize(token, tid)
+        _, editable = await asyncio.gather(g.authorize(token, tid), can_review(g, token, tid))  # 권한 두 가지를 함께 본다
         from core import engine, insights as ins
-        editable = await can_review(g, token, tid)
 
         def work(S):
             K, widgets = S['K'], S['widgets']
@@ -389,13 +402,13 @@ def install_routes(app, session, gateway):
             asked = [q for q in S['proposals'] if q['kind'] == '지표' and q['payload'].get('title') not in taken]
             shown, missing = engine.gallery(K, taken | {q['payload'].get('title') for q in asked}) if K['types'] else ([], [])
             return {'has_records': bool(K['types']), 'period': period,
-                    'auto': [ins.view(K, s, period) for s in engine.auto_widgets(K)],
+                    'auto': [short(ins.view(K, s, period)) for s in engine.auto_widgets(K)],
                     'widgets': [{'id': w['id'], **ins.view(K, w['spec'], period)} for w in up],
                     'down': [{'id': w['id'], 'title': w['spec'].get('title')} for w in widgets if w['status'] == '내림'],
-                    'suggestions': [{'source': 'proposal', 'id': q['id'], **ins.view(K, q['payload'], period)} for q in asked] +
-                                   [{'source': 'rule', **ins.view(K, s, period)} for s in picks],
-                    'gallery': [{'source': 'gallery', 'shape': '숫자 하나' if s['kind'] == 'kpi' else s['shape'], 'type': s['type'],
-                                 **ins.view(K, s, period)} for s in shown],
+                    'suggestions': [short({'source': 'proposal', 'id': q['id'], **ins.view(K, q['payload'], period)}) for q in asked] +
+                                   [short({'source': 'rule', **ins.view(K, s, period)}) for s in picks],
+                    'gallery': [short({'source': 'gallery', 'shape': '숫자 하나' if s['kind'] == 'kpi' else s['shape'], 'type': s['type'],
+                                       **ins.view(K, s, period)}) for s in shown],
                     'gallery_missing': [{'shape': a, 'why': b} for a, b in missing],
                     'pick_options': pick_options(K)}
         return await run(g, token, tid, lambda S: {'can_edit': editable,

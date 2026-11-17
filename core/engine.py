@@ -7,6 +7,7 @@
 - 기록: 날짜별 한 행. 대상을 가리키는 칸은 property_defs.ref_class. records
 관계는 칸·분류 사이(link_types)이고, 대상 쌍마다 관계 속성 값(entity_links)을 가질 수 있다."""
 import copy
+import functools
 import difflib
 import io
 import json
@@ -19,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import db, grid, llm, ocr
-from .record_cells import cells_for, edit_data, extracted_data
+from .record_cells import CellData, cells_for, edit_data, extracted_data
 
 DATA = db.ROOT / "data"
 try:  # 올린 파일 폴더. 코드 폴더에 쓸 수 없는 서버(Streamlit Cloud)에서는 임시 폴더에 둔다
@@ -53,12 +54,17 @@ def to_number(v):
 
 def to_date(v, year=None):
     """'2026-10-14', '2026. 10. 14', '2026년 12월 14일', '10/17(토) 오후 3시', '12월 14일' 을 날짜로. 아니면 None."""
-    s = str(v).strip() if v is not None else ""
+    return _date_of(str(v).strip() if v is not None else "", year or date.today().year)
+
+
+@functools.lru_cache(maxsize=65536)
+def _date_of(s, year):
+    """to_date 의 몸통. 같은 글을 날마다 · 규칙마다 다시 읽으므로(되짚어 보기) 읽은 것을 기억해 둔다. 해가 없는 날짜는 year 로 채운다."""
     if m := re.match(r"^(\d{4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})", s) or \
             re.match(r"^(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일", s):
         y, mo, d = map(int, m.groups())
     elif m := re.match(r"^(\d{1,2})\s*/\s*(\d{1,2})(?!\d)", s) or re.match(r"^(\d{1,2})\s*월\s*(\d{1,2})\s*일", s):
-        y, (mo, d) = year or date.today().year, map(int, m.groups())
+        y, (mo, d) = year, map(int, m.groups())
     else:
         return None
     try:
@@ -169,6 +175,25 @@ def infer_dtype(values):
 
 # ---- 지식 읽기 ----
 
+_PLAIN = (str, int, float, bool, type(None))
+
+
+def copied(x):
+    """copy.deepcopy 와 같은 것을 내되, DB 에서 읽은 줄(글 · 숫자 · dict · list · CellData)만 다뤄 훨씬 빠르다.
+    읽어 둔 표(kept)를 화면마다 복사하는데, 기록이 수천 줄이면 deepcopy 가 화면 계산보다 오래 걸린다.
+    바뀌지 않는 칸(Cell)은 안에 든 값도 글 · 숫자이면 그대로 나눠 쓴다. 그 밖의 것은 deepcopy 로 넘긴다."""
+    if isinstance(x, _PLAIN):
+        return x
+    if type(x) is dict:
+        return {k: copied(v) for k, v in x.items()}
+    if type(x) is list:
+        return [copied(v) for v in x]
+    if type(x) is CellData:
+        return CellData({k: copied(v) for k, v in x.items()},
+                        {k: c if isinstance(c.raw, _PLAIN) and isinstance(c.value, _PLAIN) else copy.deepcopy(c) for k, c in x.cells.items()})
+    return copy.deepcopy(x)
+
+
 def load(t):
     """확정된 지식(종류·분류·칸·별칭·관계·대상)과 확정된 기록. 표 8개는 서로 기다릴 필요가 없어 한꺼번에 읽는다.
     같은 Tenant 로 다시 부르면 그 사이에 이 Tenant 로 쓴 표만 다시 읽는다(db.Tenant.kept). 자동 반영은 카드마다 지식을 다시 보는데,
@@ -188,7 +213,7 @@ def load(t):
     todo = [(table, params) for table, params in reads if table not in kept]
     for (table, _), rows in zip(todo, db.together([lambda table=table, params=params: t.get(table, **params) for table, params in todo])):
         kept[table] = rows
-    objs, aliases, links, records, entities, elinks, props, ealiases = (copy.deepcopy(kept[table]) for table, _ in reads)
+    objs, aliases, links, records, entities, elinks, props, ealiases = (copied(kept[table]) for table, _ in reads)
     K = {
         "types": [o["name"] for o in objs if o["kind"] == "기록"],
         "classes": {o["name"]: o["parent_name"] for o in objs if o["kind"] == "대상"},
@@ -2235,16 +2260,46 @@ def spelled(K, C, value):
     return ids
 
 
+DATE_OPS = {"missed_weekday", "missed_monthday", "within_days", "is_today", "last_days", "older_than_days"}  # 오늘이 언제냐에 따라 답이 바뀌는 조건
+
+
 def backtest(K, spec, days=30):
-    """켜기 전에: 지난 days 일 동안 날마다 그날까지의 기록으로 규칙을 돌렸다면 걸렸을 기록 id들."""
+    """켜기 전에: 지난 days 일 동안 날마다 그날까지의 기록으로 규칙을 돌렸다면 걸렸을 기록 id들.
+    날마다 볼 줄(그날까지의 기록에서 scope 로 고른 것)은 기록 종류마다 한 번만 만들어 같은 종류의 규칙끼리 나눠 쓴다.
+    조건이 모두 오늘과 상관없으면(숫자 · 글 비교) 줄마다 답이 정해져 있으니, 날마다 본 줄을 모아 한 번만 맞춰 본다."""
     if not valid_spec(K, spec):
         return []
-    df, today, ids = frame(K, spec["type"]), date.today(), set()
+    parts = backtest_parts(K, spec["type"], spec.get("scope", "all"), date.today(), days)
+    if not any(c["op"] in DATE_OPS for c in spec["conditions"] or []):
+        seen = set().union(*(p.index for _, p in parts))
+        rows = frame(K, spec["type"])
+        return sorted(int(i) for i in set(match(rows[rows.index.isin(list(seen))], spec["conditions"])["_id"]))
+    # 날짜 조건이 있으면: 나머지 조건은 위처럼 한 번만 맞춰 보고, 날짜 조건만 날마다 그날 본 줄에 대어 본다
+    dated = [c for c in spec["conditions"] if c["op"] in DATE_OPS]
+    rows = frame(K, spec["type"])
+    rows = rows[rows.index.isin(list(set().union(*(p.index for _, p in parts))))]
+    ok = set(match(rows, [c for c in spec["conditions"] if c["op"] not in DATE_OPS]).index)
+    written = {c["prop"]: rows[c["prop"]].to_dict() for c in dated}
+    ids = set()
+    for d, part in parts:
+        judges = [(c["prop"], date_judge(c["op"], c.get("value"), d)) for c in dated]
+        ids |= {rows.at[i, "_id"] for i in part.index if i in ok and all(j(to_date(written[p][i], d.year)) for p, j in judges)}
+    return sorted(int(i) for i in ids)
+
+
+def backtest_parts(K, T, scope, today, days):
+    """[(그날, 그날까지의 기록에서 scope 로 고른 줄)] 지난 days 일. 같은 K 에서는 K["_frames"]에 두고 다시 쓴다."""
+    memo = K.get("_frames")
+    key = ("되짚기", T, scope, today.isoformat(), days, id(K["records"]))
+    if memo is not None and key in memo:
+        return memo[key][1]
+    df, out = frame(K, T), []
     for i in range(days):
         d = today - timedelta(days=i)
-        part = df[df["날짜"] <= d.isoformat()]
-        ids |= set(match(scoped(K, spec["type"], part, spec.get("scope", "all"), d), spec["conditions"], d)["_id"])
-    return sorted(int(i) for i in ids)
+        out.append((d, scoped(K, T, df[df["날짜"] <= d.isoformat()], scope, d)))
+    if memo is not None:
+        memo[key] = (K["records"], out)
+    return out
 
 
 PERIODS = {"오늘": ("어제", "D"), "이번 주": ("지난주", "D"), "이번 달": ("지난달", "W"), "올해": ("작년", "M")}
@@ -2599,21 +2654,9 @@ def match(df, conds, today=None):
     today = today or date.today()
     for c in conds or []:
         col, op, value = df[c["prop"]], c["op"], c.get("value")
-        if op in ("missed_weekday", "missed_monthday"):
-            due = last_due(op, int(to_number(value) or 0), today)
-            days = col.map(lambda v: to_date(v, today.year))
-            hit = days.map(lambda d: d is not None and d < due < today)  # 예정일이 지났는데(오늘은 아직 아님) 그날 뒤 기록이 없다
-        elif op in ("within_days", "is_today", "last_days", "older_than_days"):
-            days = col.map(lambda v: to_date(v, today.year))
-            n = int(to_number(value) or 0)
-            if op == "is_today":
-                hit = days.map(lambda d: d == today)
-            elif op == "within_days":
-                hit = days.map(lambda d: d is not None and today <= d <= today + timedelta(days=n))
-            elif op == "last_days":
-                hit = days.map(lambda d: d is not None and today - timedelta(days=n) < d <= today)
-            else:
-                hit = days.map(lambda d: d is not None and d < today - timedelta(days=n))
+        if op in DATE_OPS:
+            judge = date_judge(op, value, today)
+            hit = col.map(lambda v: judge(to_date(v, today.year)))
         elif op == "contains":
             hit = col.map(lambda v: filled(v) and str(value) in str(v))
         else:
@@ -2630,6 +2673,21 @@ def match(df, conds, today=None):
                 hit &= df[c["value_prop"]].notna()
         mask &= pd.Series(hit, index=df.index).fillna(False).astype(bool)
     return df[mask]
+
+
+def date_judge(op, value, today):
+    """날짜 조건 하나를 today 기준으로: 읽은 날짜(없으면 None)를 받아 걸리는지. match 와 되짚어 보기가 함께 쓴다."""
+    n = int(to_number(value) or 0)
+    if op in ("missed_weekday", "missed_monthday"):
+        due = last_due(op, n, today)
+        return lambda d: d is not None and d < due < today  # 예정일이 지났는데(오늘은 아직 아님) 그날 뒤 기록이 없다
+    if op == "is_today":
+        return lambda d: d == today
+    if op == "within_days":
+        return lambda d: d is not None and today <= d <= today + timedelta(days=n)
+    if op == "last_days":
+        return lambda d: d is not None and today - timedelta(days=n) < d <= today
+    return lambda d: d is not None and d < today - timedelta(days=n)  # older_than_days
 
 
 def last_due(op, n, today):
@@ -2976,7 +3034,18 @@ def useful_groups(K, T, repeat=False):
 
 
 def date_like(K, T):
-    """날짜 칸과, 적힌 값이 날짜로 읽히는 글 칸('2026년 12월 14일'처럼). 칸의 값 종류는 바꾸지 않고 날짜로만 읽는다."""
+    """날짜 칸과, 적힌 값이 날짜로 읽히는 글 칸('2026년 12월 14일'처럼). 칸의 값 종류는 바꾸지 않고 날짜로만 읽는다.
+    한 화면에서 지표마다 수백 번 부르므로 같은 K 에서 찾은 것은 K["_frames"]에 두고 복사해 준다(frame 과 같다)."""
+    memo = K.get("_frames")
+    if memo is None:
+        return _date_like(K, T)
+    key = ("날짜 칸", T, id(K["records"]))
+    if key not in memo:
+        memo[key] = (K["records"], _date_like(K, T))
+    return list(memo[key][1])
+
+
+def _date_like(K, T):
     df, out = frame(K, T), own(K, T, "date")
     for n in own(K, T, "text"):
         vals = [v for v in df[n] if filled(v)] if n in df else []

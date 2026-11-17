@@ -1,4 +1,5 @@
 """Authentication boundary. Supabase validates tokens; RLS independently authorizes every query."""
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -35,13 +36,16 @@ class Gateway:
         return r.json() if r.content else None  # returns void 함수는 빈 본문(204)을 돌려준다
 
     async def authenticate(self, token):
-        try:
-            user = (await self.request(token, 'GET', '/auth/v1/user')).json()
-        except HTTPException as exc:
-            if exc.status_code in (401, 403):
-                raise HTTPException(401, '다시 로그인해 주세요.') from None
-            raise
-        if not user.get('id') or not await self.rpc(token, 'passo_session_active'):
+        # 로그인 확인과 세션 확인은 서로 기다릴 필요가 없어 함께 보낸다(DB 가 멀어 왕복 한 번이 아깝다)
+        got, active = await asyncio.gather(self.request(token, 'GET', '/auth/v1/user'), self.rpc(token, 'passo_session_active'),
+                                           return_exceptions=True)
+        if isinstance(got, HTTPException) and got.status_code in (401, 403):
+            raise HTTPException(401, '다시 로그인해 주세요.') from None
+        for x in (got, active):
+            if isinstance(x, BaseException):
+                raise x
+        user = got.json()
+        if not user.get('id') or not active:
             raise HTTPException(401, '다시 로그인하거나 계정 연결을 확인해 주세요.')
         return user['id']
 
@@ -96,7 +100,8 @@ async def session(authorization: Annotated[str | None, Header()] = None, g=Depen
 
 @app.get('/healthz')
 def health():
-    return {'status':'ok'}
+    # 지금 돌고 있는 커밋(Render 가 넣어 준다). CI 배포 단계가 새 코드가 떴는지 이것으로 본다
+    return {'status':'ok','version':os.environ.get('RENDER_GIT_COMMIT','')[:7]}
 
 
 @app.get('/v1/workspaces')

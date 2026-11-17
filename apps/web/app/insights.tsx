@@ -22,13 +22,13 @@ const show=(v:unknown)=>v===null||v===undefined||v===''?'—':typeof v==='object
 const fail=(e:unknown)=>{const m=(e as Error).message;return m==='요청을 처리하지 못했어요. 다시 시도해 주세요.'?'잠시 뒤 다시 눌러 주세요.':m;};
 
 export function Evidence({table,tid,label}:{table:Table,tid:number,label?:string}){
- const [open,setOpen]=useState<number|null>(null);
+ const [open,setOpen]=useState<number|null>(null),[shown,setShown]=useState(false);  // 표는 펼칠 때 그린다. 카드가 수백 장이라 닫힌 표까지 그리면 화면이 무겁다
  if(!table.total)return null;
- return <details className="proof"><summary>{label||`근거 기록 ${table.total}줄`}</summary>
-  <div className="table-wrap"><table className="plain-table"><thead><tr>{table.columns.map(c=><th key={c}>{c}</th>)}</tr></thead>
+ return <details className="proof" onToggle={e=>setShown(e.currentTarget.open)}><summary>{label||`근거 기록 ${table.total}줄`}</summary>
+  {shown&&<><div className="table-wrap"><table className="plain-table"><thead><tr>{table.columns.map(c=><th key={c}>{c}</th>)}</tr></thead>
   <tbody>{table.rows.map(r=><Fragment key={r.id}><tr className={r.source_id?'clickable':''} onClick={()=>r.source_id&&setOpen(open===r.id?null:r.id)}>{table.columns.map(c=><td key={c}>{show(r.values[c])}</td>)}</tr>
    {open===r.id&&r.source_id&&<tr><td colSpan={table.columns.length}><img className="evidence-photo" src={`/api/workspaces/${tid}/business/sources/${r.source_id}/original?page=1`} alt="원본 사진"/></td></tr>}</Fragment>)}</tbody></table></div>
-  {table.total>table.rows.length&&<p className="muted">앞의 {table.rows.length}줄만 보여요.</p>}</details>;
+  {table.total>table.rows.length&&<p className="muted">앞의 {table.rows.length}줄만 보여요.</p>}</>}</details>;
 }
 
 export function Periods({period,set}:{period:string,set:(p:string)=>void}){

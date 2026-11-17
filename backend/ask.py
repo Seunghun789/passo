@@ -59,11 +59,30 @@ def remembered(t, name, key, make):
     return out
 
 
+LOCAL = threading.local()
+
+
+class Http:
+    """한 요청의 읽기 창구. 부른 사람의 키와 JWT 를 붙여, 스레드마다 붙들어 둔 연결로 보낸다.
+    요청마다 연결을 새로 맺으면 DB 가 먼 곳(도쿄)에 있어 TLS 를 맺는 왕복이 몇 번 더 든다. 연결은 다음 요청이 다시 쓰므로 close 는 할 일이 없다."""
+    def __init__(self, headers):
+        self.headers = headers
+
+    def get(self, url, params=None):
+        client = getattr(LOCAL, 'http', None)
+        if client is None:
+            client = LOCAL.http = httpx.Client(timeout=30, trust_env=False)
+        return client.get(url, params=params, headers=self.headers)
+
+    def close(self):
+        pass
+
+
 def open_reader(g, token, tid):
     """engine 이 읽는 표를 부른 사람의 권한으로 읽는 창구. 1,000줄이 넘는 표는 이어서 읽는다.
     워크스페이스가 바뀌지 않았으면 앞 요청이 읽어 둔 표를 다시 쓴다(kept_tables)."""
     from backend.structure import Reader
-    http = httpx.Client(timeout=30, trust_env=False, headers={'apikey': g.key, 'Authorization': 'Bearer ' + token})
+    http = Http({'apikey': g.key, 'Authorization': 'Bearer ' + token})
 
     def fetch(table, params):
         params = dict(params)

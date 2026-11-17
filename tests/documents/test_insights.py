@@ -340,3 +340,30 @@ def test_dashboard_reuses_result_until_knowledge_or_widgets_change(monkeypatch):
     data['records'] = data['records'][:2]
     fresh = c.get('/v1/workspaces/7/dashboard').json()
     assert state['reads'] == 2 and fresh != down
+
+
+def test_backtest_matches_day_by_day_rerun():
+    """되짚어 보기는 기록 종류마다 날마다 볼 줄을 나눠 쓰고, 날짜와 상관없는 조건은 한 번만 맞춰 본다.
+    그래도 '날마다 그날까지의 기록으로 규칙을 다시 돌린' 결과와 같아야 한다."""
+    from core import engine
+    data = tables()
+    K = engine.load(Reader(lambda table, params: data.get(table, []), 7))
+
+    def day_by_day(spec, days=30):
+        df, today, ids = engine.frame(K, spec['type']), date.today(), set()
+        for i in range(days):
+            d = today - timedelta(days=i)
+            part = engine.scoped(K, spec['type'], df[df['날짜'] <= d.isoformat()], spec.get('scope', 'all'), d)
+            ids |= set(engine.match(part, spec['conditions'], d)['_id'])
+        return sorted(int(i) for i in ids)
+    cond = lambda prop, op, value: {'prop': prop, 'op': op, 'value': value, 'value_prop': None}
+    rules = [[cond('수량', '<', '30')], [cond('날짜', 'older_than_days', '4')], [cond('날짜', 'last_days', '3'), cond('수량', '>=', '12')],
+             [cond('날짜', 'is_today', None)], [cond('날짜', 'missed_weekday', '0')], [cond('품목', 'contains', '생')]]
+    hit = 0
+    for scope in ('all', 'latest', 'recent7'):
+        for conds in rules:
+            spec = {'title': 't', 'type': '재고 점검', 'scope': scope, 'conditions': conds}
+            assert engine.valid_spec(K, spec)
+            assert engine.backtest(K, spec) == day_by_day(spec), (scope, conds)
+            hit += bool(day_by_day(spec))
+    assert hit >= 10  # 걸리는 규칙이 충분히 있어야 비교가 뜻이 있다

@@ -11,7 +11,8 @@ export async function proxy(request: NextRequest) {
       values.forEach(({name,value,options})=>response.cookies.set(name,value,options));
     }},
   });
-  await sb.auth.getUser();
+  // 세션을 새로 고치고(만료되면) 확인한다. API 서버가 받은 토큰을 다시 확인하므로, 뒤의 화면 · API 는 쿠키의 세션만 꺼내 쓴다
+  await sb.auth.getClaims();
   response.headers.set('Cache-Control','private, no-store');
   return response;
 }
