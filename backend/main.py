@@ -100,8 +100,8 @@ async def session(authorization: Annotated[str | None, Header()] = None, g=Depen
 
 @app.get('/healthz')
 def health():
-    # 지금 돌고 있는 커밋(Render 가 넣어 준다). CI 배포 단계가 새 코드가 떴는지 이것으로 본다
-    return {'status':'ok','version':os.environ.get('RENDER_GIT_COMMIT','')[:7]}
+    # 지금 돌고 있는 커밋(Cloud Run 은 CI 가 APP_VERSION 으로, Render 는 스스로 넣어 준다). CI 배포 단계가 새 코드가 떴는지 이것으로 본다
+    return {'status':'ok','version':(os.environ.get('APP_VERSION') or os.environ.get('RENDER_GIT_COMMIT',''))[:7]}
 
 
 @app.get('/v1/workspaces')

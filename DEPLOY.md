@@ -52,6 +52,17 @@ Render에는 무료 백그라운드 워커가 없어서, 워커는 지금 Mac의
 - [ ] 첫 배포가 끝나면 주소 뒤에 `/healthz`를 붙여 열었을 때 응답이 오는지 본다.
 - [ ] 생긴 주소(예: `https://passo-dev-api.onrender.com`)를 적어 둔다.
 
+### Cloud Run (API 서버, 도쿄)
+
+DB(Supabase)가 도쿄에 있어 API 도 도쿄에 둔다. 요청마다 1 vCPU, 쉬면 꺼졌다가 요청이 오면 몇 초 안에 켜진다.
+
+- [ ] Google Cloud 콘솔에서 프로젝트를 만들고 결제 계정을 연결한다.
+- [ ] 콘솔 위의 Cloud Shell을 열고 `bash <(curl -fsSL https://raw.githubusercontent.com/Seunghun789/passo/main/deploy/cloud-run-setup.sh)`를 실행한다. 컨테이너 저장소 · 배포용 서비스 계정 · GitHub Actions 연결(이 저장소 main만)을 만든다.
+- [ ] 끝에 나온 세 줄을 GitHub 저장소 Settings → Secrets and variables → Actions → Variables에 `GCP_PROJECT` · `GCP_SERVICE_ACCOUNT` · `GCP_WIF_PROVIDER`로 넣는다(비밀값이 아니라 이름이다).
+- [ ] `main`에 푸시하면 CI가 통과한 뒤 'API 배포 (Cloud Run)'이 컨테이너를 만들어 `passo-api`(asia-northeast1)로 배포하고 `/healthz`의 `version`을 확인한다.
+- [ ] 첫 배포 뒤 Cloud Run → passo-api → 새 버전 수정 및 배포 → 변수 및 보안 비밀에 Render와 같은 값(위 Render 항목에서 TZ를 뺀 여섯 개)을 넣는다. 다음 배포부터는 그대로 남는다.
+- [ ] Vercel의 `PASSO_API_URL`을 Cloud Run 주소로 바꾸고 다시 배포한다.
+
 ### Vercel (웹)
 
 - [ ] Vercel에서 저장소를 연결하고 Root Directory를 `apps/web`으로 정한다.

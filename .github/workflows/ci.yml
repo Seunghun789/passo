@@ -1,6 +1,7 @@
 # 푸시와 PR마다 API 테스트 · DB 권한 테스트 · 웹 빌드를 돌린다.
-# main 에서 모두 통과하면 'API 배포'가 Render 배포 주소(Deploy Hook, 저장소 비밀값 RENDER_DEPLOY_HOOK_URL)로 이 커밋을 배포하고,
-# /healthz 의 version 이 이 커밋이 될 때까지 기다린다. Render 쪽 Auto-Deploy 는 끈다(Off).
+# main 에서 모두 통과하면 이 커밋의 API 를 배포하고, /healthz 의 version 이 이 커밋이 될 때까지 기다린다.
+# - 'API 배포 (Cloud Run)': 저장소 변수 GCP_PROJECT · GCP_SERVICE_ACCOUNT · GCP_WIF_PROVIDER 가 있으면(deploy/cloud-run-setup.sh) 도쿄 Cloud Run 에
+# - 'API 배포': 저장소 비밀값 RENDER_DEPLOY_HOOK_URL 이 있으면 Render Deploy Hook 으로(Render 쪽 Auto-Deploy 는 Off)
 name: CI
 
 on:
@@ -81,3 +82,44 @@ jobs:
             sleep 15
           done
           echo "::error::15분 안에 새 코드가 뜨지 않았어요. Render Events 를 확인해 주세요"; exit 1
+
+  cloudrun:
+    name: API 배포 (Cloud Run)
+    needs: [api, web]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # 키 파일 없이 Google Cloud 에 들어간다(Workload Identity Federation)
+    env:
+      IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT }}/passo/api:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: 컨테이너 만들어 올리기
+        run: |
+          gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+          docker build -f backend/Dockerfile --target api -t "$IMAGE" .
+          docker push "$IMAGE"
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: passo-api
+          region: asia-northeast1
+          image: ${{ env.IMAGE }}
+          # 키(SUPABASE_* · RUNYOUR_API_KEY · ADMIN_EMAILS)는 Cloud Run 화면에서 한 번 넣는다. 여기서 넣는 값과 합쳐지고 지워지지 않는다
+          env_vars: |
+            APP_VERSION=${{ github.sha }}
+            TZ=Asia/Seoul
+          flags: --allow-unauthenticated --cpu=1 --memory=1Gi --cpu-boost --timeout=300 --min-instances=0 --max-instances=2 --concurrency=40
+      - name: 새 코드가 떴는지 보기
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          got=$(curl -sS --max-time 60 "$URL/healthz" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version",""))')
+          echo "Cloud Run: $got / 이 커밋: ${GITHUB_SHA:0:7} / 주소: $URL"
+          [ "$got" = "${GITHUB_SHA:0:7}" ]
