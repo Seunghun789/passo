@@ -3,9 +3,8 @@ passo 인증·조직 격리 기반 (2026-11-13)
 
 적용 상태
 ---------
-현재 Supabase 프로젝트 dubxkjwglefkaidhktkc에 migration 001~015, 016의 passo_link_propose, 017, 019 적용.
-018(관계 [끊기] · 직접 고친 것 [되돌리기])과 020(구성원 [내보내기])은 줄을 지우는 문이 있어 SQL 편집기에서 직접 실행한다.
-016의 passo_link_cut도 018에 들어 있다.
+현재 Supabase 프로젝트 dubxkjwglefkaidhktkc에 migration 001~020 적용(016의 passo_link_cut은 018로 적용).
+018(관계 [끊기] · 직접 고친 것 [되돌리기])과 020(구성원 [내보내기])은 줄을 지우는 문이 있어 SQL 편집기에서 직접 실행했다.
 001은 Browser URL 길이 제한 때문에 5개 명시적 트랜잭션으로 나누어 적용했다.
 002는 기존 함수 정의의 오류 코드 40001만 PT409로 치환했다.
 재설치 시 schema.sql 이후 001~020을 번호 순서로 실행한다.

@@ -68,7 +68,6 @@ Render에는 무료 백그라운드 워커가 없어서, 워커는 지금 Mac의
 - [ ] Authentication → Providers → Email에서 "Confirm email"을 켠 채로 둔다(메일 확인을 마친 사람만 기록에 잇는다).
 - [ ] 무료 Supabase의 기본 메일은 한 시간에 몇 통만 보낸다. 사용자 테스트 전에 Authentication → SMTP에 메일 서비스를 연결한다.
 - [ ] 카카오 로그인을 쓸 때: Kakao Developers에서 앱을 만들고, Supabase Authentication → Providers → Kakao에 REST API 키 · Client Secret을 넣는다.
-- [ ] SQL 편집기에서 `db/migrations/018_undo_edits_and_cut.sql`과 `020_member_remove.sql`을 한 번씩 실행한다([끊기] · [되돌리기] · [내보내기]).
 
 ### 워커
 

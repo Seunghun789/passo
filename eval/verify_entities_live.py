@@ -130,7 +130,14 @@ def main():
   ok(c.post(base+f'/edits/{q3}',headers=owner,json={'ok':True}))
   g=ok(c.get(base+'/graph',headers=owner))
   check('unit and description applied to the column',next(x for x in g['props'][T] if x['name']==nums[0].split('.',1)[1])['description']=='직접 단 설명')
-  check('applied edits are listed for undo',len(ok(c.get(base+'/entities',headers=owner))['undoable'])>=2)
+  undo=ok(c.get(base+'/entities',headers=owner))['undoable']
+  check('applied edits are listed for undo',len(undo)>=2)
+  check('viewer cannot undo',c.post(base+f"/edits/{undo[0]['id']}/undo",headers=viewer,json={}).status_code==403)
+  q2u=next(u for u in undo if u['kind']=='속성 값')
+  ok(c.post(base+f"/edits/{q2u['id']}/undo",headers=owner,json={}))
+  cls=next(x for x in ok(c.get(base+'/entities',headers=owner))['classes'] if x['name']==C)
+  check('[되돌리기] puts the attribute value back',cls['rows'][0]['attrs'].get('단가') is None)
+  check('undone edit cannot be undone again',c.post(base+f"/edits/{q2u['id']}/undo",headers=owner,json={}).status_code==409)
   from playwright.sync_api import sync_playwright
   with sync_playwright() as pw:
    browser=pw.chromium.launch();page=browser.new_page(viewport={'width':1440,'height':1050})
@@ -145,6 +152,15 @@ def main():
    page.goto(a.web+f'/?workspace={tid}&view=graph');page.locator('.graph canvas').wait_for(timeout=60000)
    page.get_by_label('점 고르기').select_option(f'C:{C}');page.locator('.node-card').wait_for(timeout=10000)
    check('browser graph draws and opens a node card',page.locator('.graph canvas').count()==1 and C in page.locator('.node-card').inner_text())
+   before=len(ok(c.get(base+'/graph',headers=owner))['links'])
+   check('viewer cannot cut a link',c.post(base+f"/links/{ok(c.get(base+'/graph',headers=owner))['links'][0]['id']}/cut",headers=viewer,json={}).status_code==403)
+   mine=f"'{ref['name']}({T})'와 '{nums[0].split('.',1)[1]}({T})'"  # 이 검증이 [이어 보기]로 이은 관계
+   page.locator('.link-row').filter(has_text=mine).get_by_role('button',name='끊기').click()
+   page.get_by_text('관계를 끊었어요.').wait_for(timeout=30000)
+   g2=ok(c.get(base+'/graph',headers=owner))
+   check('[끊기] removes the confirmed link',len(g2['links'])==before-1 and not any(mine in l['text'] for l in g2['links']))
+   trail=ok(sb('GET','/rest/v1/proposals',params={'tenant_id':f'eq.{tid}','kind':'eq.연결','evidence->>cut':'eq.true','select':'status'}))
+   check('cut leaves a declined trail',len(trail)==1 and trail[0]['status']=='거절')
    page.screenshot(path=str(a.output/'graph.png'),full_page=True);browser.close()
   report['status']='passed'
  except Exception as exc:
