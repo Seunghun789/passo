@@ -155,6 +155,13 @@ function SuggestionCard({s,tid,actions}:{s:Suggestion,tid:number,actions?:React.
   <small className="muted">알림을 보내거나 기록을 바꾸지는 않아요.</small></article>;
 }
 
+const SHOWN=6;  // 추천은 걸린 것 · 값이 있는 것부터 몇 장만 펼치고, 나머지는 접어 둔다
+const quiet=(v:{kind?:string,value?:string,count?:number})=>v.kind==='empty'||v.value==='0'||v.count===0;
+function Fold<T>({items,label,render}:{items:T[],label:string,render:(x:T,i:number)=>React.ReactNode}){
+ return <>{items.slice(0,SHOWN).map(render)}
+  {items.length>SHOWN&&<details className="paper-group fold"><summary>{label} {items.length-SHOWN}개 더</summary><div className="fold-body">{items.slice(SHOWN).map((x,i)=>render(x,i+SHOWN))}</div></details>}</>;
+}
+
 function useAct(request:Request,load:()=>Promise<unknown>,setError:(e:string)=>void){
  const [busy,setBusy]=useState(''),[notice,setNotice]=useState('');
  const act=async(key:string,path:string,body:object,done:string)=>{setBusy(key);setNotice('');setError('');
@@ -222,9 +229,9 @@ export function Automation({request,tid,go}:{request:Request,tid:number,go:(v:st
   {!data&&!error&&<p className="muted">불러오는 중이에요...</p>}
   {data&&!data.has_records&&<div className="empty"><h2>아직 확정한 기록이 없어요.</h2><button className="primary" onClick={()=>go('upload')}>올리기</button></div>}
   {data?.has_records&&<>
-   {!!data.suggestions.length&&<><h2>반복 업무 제안</h2>{data.suggestions.map(s=><SuggestionCard key={s.source+s.title} s={s} tid={tid} actions={data.can_edit&&<>
+   {!!data.suggestions.length&&<><h2>반복 업무 제안</h2><Fold label="반복 업무 제안" items={[...data.suggestions].sort((a,b)=>Number(quiet(a))-Number(quiet(b))||b.backtest-a.backtest)} render={(s,i)=><SuggestionCard key={`${s.source}-${s.id??''}-${s.title}-${i}`} s={s} tid={tid} actions={data.can_edit&&<>
     {s.source==='proposal'&&s.id&&<button disabled={!!busy} onClick={()=>act(`l${s.id}`,`rule-proposals/${s.id}`,{ok:false},'나중에 볼게요.')}>나중에</button>}
-    <button className="primary" disabled={!!busy} onClick={()=>act(s.title,'automations',{title:s.title,source:s.source||'rule'},'켰어요. 홈에도 보여요.')}>켜기</button></>}/>)}</>}
+    <button className="primary" disabled={!!busy} onClick={()=>act(s.title,'automations',{title:s.title,source:s.source||'rule'},'켰어요. 홈에도 보여요.')}>켜기</button></>}/>}/></>}
    <h2>켜 둔 자동화</h2>{data.enabled.map(a=><article className="panel" key={a.id}><div className="toolbar"><div><b>{a.title}</b>, 지금 {a.count}건<p className="muted">{a.rule}</p></div>
     {data.can_edit&&<button disabled={!!busy} onClick={()=>act(`off${a.id}`,`automations/${a.id}`,{status:'꺼짐'},'껐어요. 홈에서 빠져요.')}>끄기</button>}</div>
     {a.evidence&&<Evidence table={a.evidence} tid={tid} label={`걸린 기록 ${a.count}줄`}/>}</article>)}
@@ -282,9 +289,9 @@ export function Dashboard({request,tid,go}:{request:Request,tid:number,go:(v:str
    </section>}
    <h2>올린 지표</h2>{data.widgets.length?<div className="widget-grid">{data.widgets.map(w=><ViewCard key={w.id} v={w} tid={tid} request={request} wid={w.id} action={data.can_edit&&<button disabled={!!busy} onClick={()=>act(`d${w.id}`,`widgets/${w.id}`,{status:'내림'},'대시보드에서 내렸어요.')}>내리기</button>}/>)}</div>:<p className="muted">올린 지표가 없어요. [만들기]로 보기를 골라 올릴 수 있어요.</p>}
    {!!data.down.length&&<details className="paper-group"><summary>내린 지표 {data.down.length}개</summary>{data.down.map(w=><div className="toolbar" key={w.id}><span>{w.title}</span>{data.can_edit&&<button disabled={!!busy} onClick={()=>act(`u${w.id}`,`widgets/${w.id}`,{status:'올림'},'다시 올렸어요.')}>올리기</button>}</div>)}</details>}
-   {!!data.suggestions.length&&<><h2>추천 지표</h2><div className="widget-grid">{data.suggestions.map(w=><ViewCard key={(w.source||'')+w.title} v={w} tid={tid} request={request} action={data.can_edit&&<div className="cal-nav">
+   {!!data.suggestions.length&&<><h2>추천 지표</h2><div className="widget-grid"><Fold label="추천 지표" items={[...data.suggestions].sort((a,b)=>Number(quiet(a))-Number(quiet(b)))} render={(w,i)=><ViewCard key={`${w.source||''}-${w.id??''}-${w.title}-${i}`} v={w} tid={tid} request={request} action={data.can_edit&&<div className="cal-nav">
     {w.source==='proposal'&&w.id&&<button disabled={!!busy} onClick={()=>act(`l${w.id}`,`rule-proposals/${w.id}`,{ok:false},'나중에 볼게요.')}>나중에</button>}
-    <button className="primary" disabled={!!busy} onClick={()=>act(w.title,'widgets',{title:w.title,source:w.source||'rule'},'올렸어요.')}>올리기</button></div>}/>)}</div></>}
+    <button className="primary" disabled={!!busy} onClick={()=>act(w.title,'widgets',{title:w.title,source:w.source||'rule'},'올렸어요.')}>올리기</button></div>}/>}/></div></>}
    <h2>기록 현황</h2><div className="widget-grid">{data.auto.map(w=><ViewCard key={w.title} v={w} tid={tid} request={request}/>)}</div>
   </>}</>;
 }
