@@ -78,10 +78,29 @@ def run_model(content, mime, model=None):
     return {'sheet':sheet,'usage':usage}
 
 
-def make_payload(sheet, found, uploaded=None):
+def run_tables(content, mime):
+    """쪽마다 인쇄된 표 선을 찾는다(core/grid.py, OpenCV, 한 장 0.3~0.4초). 표 선이 없거나 찾지 못한 쪽은 뺀다."""
+    from core import grid
+    pages = 1
+    if mime == 'application/pdf':
+        import pypdfium2 as pdfium
+        with pdfium.PdfDocument(content) as pdf:
+            pages = len(pdf)
+    out = {}
+    for n in range(1, pages+1):
+        try:
+            if g := grid.lines(page_image(content,mime,n)):
+                out[str(n)] = g
+        except Exception as exc:  # 표 선을 못 찾으면 OCR 격자로 자리를 잡는다
+            print(f"표 선 찾기 실패: {type(exc).__name__}", flush=True)
+    return out
+
+
+def make_payload(sheet, found, uploaded=None, tables=None):
     """uploaded: 올린 날(YYYY-MM-DD). 종이에서 날짜를 읽지 못하면 이 날을 기록 날짜로 넣고 date_assumed 로 알려
-    "기록 날짜" 카드로 묻게 한다. 올린 날도 모르면 날짜를 지어내지 않고 실패한다."""
-    from core import ocr
+    "기록 날짜" 카드로 묻게 한다. 올린 날도 모르면 날짜를 지어내지 않고 실패한다.
+    tables: run_tables 결과(쪽 → 표 선 격자). 표 칸의 상자는 표 선 격자 칸을 먼저 쓰고, 못 찾은 칸만 OCR 격자 · 짝짓기 상자를 쓴다."""
+    from core import engine, ocr
     from core.record_cells import extracted_data, encode_record
     raw_date = sheet.get('occurred_at')
     assumed = None
@@ -108,6 +127,19 @@ def make_payload(sheet, found, uploaded=None):
         boxes = ocr.grid([[(str(c.get('source_raw') or ''),box(c),c['label']) for c in cs] for cs in rows_p], lines)
         for cs, bs in zip(rows_p, boxes or []):
             gridded.update({id(c): b for c, b in zip(cs, bs) if b})
+    # 표 선 격자(core/grid.py): 기록 줄 순서와 열 이름으로 표의 칸을 찾는다. 찾은 칸은 그 칸 상자를 쓴다
+    ruled = {}
+    for p, g in (tables or {}).items():
+        rows_p = [cs for cs in ([c for c in r['cells'] if str(c.get('page',1))==p] for r in sheet['rows']) if cs]
+        sub = {'columns': sheet.get('columns', []),
+               'rows': [{'cells': [{'value': c.get('value'), 'label': c['label'], 'box': None} for c in cs]} for cs in rows_p]}
+        try:
+            engine.place_grid(sub, found.get(p, []), g)
+        except Exception as exc:
+            print(f"표 선 격자 맞추기 실패: {type(exc).__name__}", flush=True)
+            continue
+        for cs, r in zip(rows_p, sub['rows']):
+            ruled.update({id(c): x['box'] for c, x in zip(cs, r['cells']) if x['box']})
     records, spans, used = [], {}, {}
     for index, row in enumerate(sheet['rows']):
         cells = [*sheet.get('doc_fields',[]), *row['cells']]
@@ -129,7 +161,7 @@ def make_payload(sheet, found, uploaded=None):
             used.setdefault(str(page),set()).update(keep[n] for n in took)
             for n,c in enumerate(group):
                 spans.setdefault(c['label'],[]).append({'rec':index,'page':page,'quote':c.get('source_raw'),
-                    'box':placed[n] if n < len(placed) else box(c),'model_box':box(c),'location':'estimated',
+                    'box':ruled.get(id(c)) or (placed[n] if n < len(placed) else box(c)),'model_box':box(c),'location':'estimated',
                     'unsure':c.get('uncertain',False),'unreadable':c.get('unreadable',False)})
     names = [*sheet.get('columns',[]), *(c['label'] for c in sheet.get('doc_fields',[])), sheet['title']]
     pages = {p: ocr.unread(lines, used.get(p,set()), names) for p,lines in found.items()}

@@ -28,7 +28,7 @@ class Worker:
         return self.request('POST','/rest/v1/rpc/'+name,json=body or {}).json()
 
     def process(self, job):
-        from backend.extraction import run_ocr, run_model, run_fill, run_structure, run_entities, make_payload
+        from backend.extraction import run_ocr, run_model, run_fill, run_tables, run_structure, run_entities, make_payload
         stop, lost = threading.Event(), threading.Event()
         args = {'jid':job['id'],'fence':job['lease_token']}
         def heartbeat():
@@ -62,7 +62,7 @@ class Worker:
             if 'fill' not in state:  # 하네스: 아래쪽에 읽지 않은 줄이 남았으면 그 부분만 잘라 이어 읽는다
                 state['fill'] = run_fill(content,job['media_type'],state['extraction']['sheet'],state['ocr'],uploaded,job.get('model_id'));save(state)
             sheet = state['fill']['sheet']
-            payload = make_payload(sheet,state['ocr'],uploaded)
+            payload = make_payload(sheet,state['ocr'],uploaded,run_tables(content,job['media_type']))  # 표 선은 체크포인트에 두지 않고 매번 찾는다(1초 안)
             fetch = lambda table,params: self.request('GET','/rest/v1/'+table,params=params).json()
             if 'structure' not in state:
                 state['structure'] = run_structure(fetch,job['tenant_id'],sheet,

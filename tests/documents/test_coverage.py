@@ -82,3 +82,29 @@ def test_grid_measures_columns_from_confident_values():
     found = [{'text': f'1{n}6,500', 'conf': 0.9, 'box': [408, 44 + n * 28, 504, 69 + n * 28]} for n in range(3)]
     rows = [[(f'1{n}6,500', [640, 70 + n * 60, 1000, 130 + n * 60], '금액')] for n in range(3)]
     assert all(b[0][0] == 408 and b[0][2] == 504 for b in ocr.grid(rows, found))  # AI가 오른쪽 칸으로 적은 열을 실제 자리로
+
+
+class Ruled:
+    """표 선 격자 대역: 줄 높이 28, 열 너비 100인 표."""
+    def straddles(self, box):
+        return False
+
+    def where(self, box):
+        return (box[1] - 44) // 28, box[0] // 100, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+
+    def cell_at(self, y, C):
+        r = round((y - 44 - 12.5) / 28)
+        return [C * 100, 44 + r * 28, C * 100 + 100, 72 + r * 28]
+
+
+def test_ruled_grid_cell_wins_over_ocr_placement():
+    found = [{'text': f'값{n:03d}', 'conf': 0.9, 'box': [110, 44 + n * 28, 190, 69 + n * 28]} for n in range(4)]
+    s = sheet([f'값{n:03d}' for n in range(4)])
+    p = make_payload(s, {'1': found}, tables={'1': Ruled()})
+    assert [x['box'] for x in p['spans']['품명']] == [[100, 44 + n * 28, 200, 72 + n * 28] for n in range(4)]
+
+
+def test_without_tables_ocr_placement_is_used():
+    found = [{'text': f'값{n:03d}', 'conf': 0.9, 'box': [110, 44 + n * 28, 190, 69 + n * 28]} for n in range(4)]
+    p = make_payload(sheet([f'값{n:03d}' for n in range(4)]), {'1': found})
+    assert [x['box'][1] for x in p['spans']['품명']] == [44 + n * 28 for n in range(4)]
