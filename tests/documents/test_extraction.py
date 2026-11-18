@@ -42,6 +42,20 @@ def test_missing_date_is_not_fabricated():
     with pytest.raises((ValueError,TypeError)):make_payload({'occurred_at':None}, {})
 
 
+@pytest.mark.parametrize('raw',[None,'','2024. 11'])
+def test_missing_date_uses_upload_day_and_asks(raw):
+    cell={'label':'품명','source_raw':'볼트','page':1}
+    p=make_payload({'title':'표','occurred_at':raw,'rows':[{'cells':[cell]},{'cells':[cell]}]},{'1':[]},'2026-11-18')
+    assert [r['occurred_at'] for r in p['records']]==['2026-11-18','2026-11-18']
+    assert p['date_assumed']=={'value':'2026-11-18','written':raw or ''}
+
+
+def test_read_date_is_not_marked_assumed():
+    cell={'label':'품명','source_raw':'볼트','page':1}
+    p=make_payload({'title':'표','occurred_at':'2024-11-01','rows':[{'cells':[cell]}]},{'1':[]},'2026-11-18')
+    assert p['records'][0]['occurred_at']=='2024-11-01' and 'date_assumed' not in p
+
+
 def test_header_is_not_used_as_evidence_for_row_number():
     cell={'label':'번호','source_raw':'1','page':1,'box':[70,220,140,270]}
     found={'1':[{'text':'번호','box':[70,220,140,270],'conf':1},

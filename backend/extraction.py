@@ -78,12 +78,20 @@ def run_model(content, mime, model=None):
     return {'sheet':sheet,'usage':usage}
 
 
-def make_payload(sheet, found):
+def make_payload(sheet, found, uploaded=None):
+    """uploaded: 올린 날(YYYY-MM-DD). 종이에서 날짜를 읽지 못하면 이 날을 기록 날짜로 넣고 date_assumed 로 알려
+    "기록 날짜" 카드로 묻게 한다. 올린 날도 모르면 날짜를 지어내지 않고 실패한다."""
     from core import ocr
     from core.record_cells import extracted_data, encode_record
     raw_date = sheet.get('occurred_at')
-    # Never fabricate a business date: missing/invalid dates fail for explicit repair.
-    occurred = date.fromisoformat(raw_date).isoformat()
+    assumed = None
+    try:
+        occurred = date.fromisoformat(raw_date).isoformat()
+    except (TypeError, ValueError):
+        if uploaded is None:
+            raise
+        occurred = date.fromisoformat(uploaded).isoformat()
+        assumed = {'value': occurred, 'written': raw_date if isinstance(raw_date, str) else ''}
     if not sheet.get('title') or not 1 <= len(sheet.get('rows',[])) <= 1000:
         raise ValueError('empty or oversized extraction')
     records, spans = [], {}
@@ -108,4 +116,7 @@ def make_payload(sheet, found):
                 spans.setdefault(c['label'],[]).append({'rec':index,'page':page,'quote':c.get('source_raw'),
                     'box':placed[n] if n < len(placed) else box(c),'model_box':box(c),'location':'estimated',
                     'unsure':c.get('uncertain',False),'unreadable':c.get('unreadable',False)})
-    return {'records':records,'spans':spans}
+    result = {'records':records,'spans':spans}
+    if assumed:
+        result['date_assumed'] = assumed
+    return result

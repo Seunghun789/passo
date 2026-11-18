@@ -690,7 +690,7 @@ def copy_of(t):
 def risky(K, q, spans):
     """사람에게 물을 애매한 값인가: 틀리면 합계·기간이 틀어지는 숫자·날짜 칸, 또는 후보끼리 숫자가 다른 값(글 안의 금액)."""
     P = q["payload"]
-    if P.get("over"):
+    if P.get("over") or P.get("field") == "occurred_at":  # 종이에 날짜가 없어 올린 날을 넣은 기록 날짜
         return True
     prop = K["alias"].get((P["type"], P["label"]))
     if next((p["dtype"] for p in K["props"].get(P["type"], []) if p["name"] == prop), None) in ("number", "date"):

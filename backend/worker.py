@@ -6,6 +6,8 @@ import os
 import signal
 import threading
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -56,7 +58,8 @@ class Worker:
                 state['ocr'] = run_ocr(content,job['media_type']);save(state)
             if 'extraction' not in state:
                 state['extraction'] = run_model(content,job['media_type'],job.get('model_id'));save(state)
-            payload = make_payload(state['extraction']['sheet'],state['ocr'])
+            uploaded = job.get('created_at') and datetime.fromisoformat(job['created_at']).astimezone(ZoneInfo('Asia/Seoul')).date().isoformat()
+            payload = make_payload(state['extraction']['sheet'],state['ocr'],uploaded)
             fetch = lambda table,params: self.request('GET','/rest/v1/'+table,params=params).json()
             if 'structure' not in state:
                 state['structure'] = run_structure(fetch,job['tenant_id'],state['extraction']['sheet'],
