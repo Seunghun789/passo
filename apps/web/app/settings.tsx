@@ -16,6 +16,7 @@ export default function Settings({request}:{request:Request}){
  const [role,setRole]=useState('확인하는 사람'),[inviting,setInviting]=useState(false),[link,setLink]=useState('');
  const load=useCallback(()=>request('settings').then(setData).catch(e=>setError(fail(e))),[request]);
  useEffect(()=>{load();},[load]);
+ useEffect(()=>{if(data&&location.hash)document.getElementById(location.hash.slice(1))?.scrollIntoView({block:'start'});},[data]);  // 사이드바 "조직 이름 관리"에서 고른 칸으로
  async function act(path:string,body:object,done:string){setBusy(true);setError('');setNotice('');
   try{const r=await request(path,{method:'POST',body:JSON.stringify(body)});await load();setNotice(done);return r;}catch(e){setError(fail(e));return null;}finally{setBusy(false);}}
  async function save(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);
@@ -24,7 +25,7 @@ export default function Settings({request}:{request:Request}){
  const owner=data.info.role==='주인',i=data.info;
  return <><h1>워크스페이스 관리</h1><p className="muted">내 역할: {i.role}{owner?'':' · 정보와 구성원은 주인이 바꿔요.'}</p>
   {error&&<p className="error" role="alert">{error}</p>}{notice&&<p className="success" role="status">{notice}</p>}
-  <section className="panel settings-block"><h2>워크스페이스 정보</h2>
+  <section id="ws-info" className="panel settings-block"><h2>워크스페이스 정보</h2>
    <form onSubmit={save} className="pick-form settings-form">
     <label>워크스페이스 이름<input name="title" required maxLength={60} defaultValue={i.title||''} disabled={!owner}/></label>
     <label>하는 일 · 무엇을 기록하나요<input name="about" maxLength={500} defaultValue={i.about||''} disabled={!owner}/></label>
@@ -34,9 +35,9 @@ export default function Settings({request}:{request:Request}){
     <label>웹사이트<input name="website" maxLength={300} defaultValue={i.website||''} disabled={!i.org_owner}/></label>
     {owner&&<div className="form-actions"><button className="primary" disabled={busy}>변경사항 저장하기</button></div>}</form></section>
   <ReadingNotes request={request} canRemove={['주인','확인하는 사람'].includes(i.role)}/>
-  <section className="panel settings-block"><h2>권한 관리</h2><div className="table-wrap"><table className="plain-table"><thead><tr><th>역할</th><th>할 수 있는 일</th></tr></thead>
+  <section id="ws-roles" className="panel settings-block"><h2>권한 관리</h2><div className="table-wrap"><table className="plain-table"><thead><tr><th>역할</th><th>할 수 있는 일</th></tr></thead>
    <tbody>{data.roles.map(r=><tr key={r.role}><td><b>{r.role}</b></td><td>{r.can.join(' · ')}</td></tr>)}</tbody></table></div></section>
-  <section className="panel settings-block"><div className="toolbar"><h2>구성원 관리</h2>{owner&&<button className="primary" onClick={()=>{setInviting(!inviting);setLink('');}}>구성원 초대하기</button>}</div>
+  <section id="ws-members" className="panel settings-block"><div className="toolbar"><h2>구성원 관리</h2>{owner&&<button className="primary" onClick={()=>{setInviting(!inviting);setLink('');}}>구성원 초대하기</button>}</div>
    {inviting&&owner&&<div className="invite-box"><label>역할<select value={role} onChange={e=>setRole(e.target.value)}>{ROLES.map(r=><option key={r}>{r}</option>)}</select></label>
     <button className="primary" disabled={busy} onClick={async()=>{const r=await act('invites',{role},'초대 링크를 만들었어요. 7일 동안 쓸 수 있어요.');if(r)setLink(`${location.origin}/invite/${r.token}`);}}>초대</button>
     {link&&<div className="invite-link"><input readOnly value={link} aria-label="초대 링크" onFocus={e=>e.currentTarget.select()}/><button onClick={()=>navigator.clipboard?.writeText(link).then(()=>setNotice('링크를 복사했어요.'))}>복사</button></div>}</div>}

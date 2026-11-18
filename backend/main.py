@@ -135,6 +135,10 @@ async def workspaces(token=Depends(session), g=Depends(gateway)):
             'select':'id,title', 'id':'in.('+','.join(str(w['id']) for w in spaces)+')'})).json()
         display = {w['id']:w.get('title') or '내 워크스페이스' for w in titles}
         for w in spaces: w['title'] = display.get(w['id'], '내 워크스페이스')
+        # 사이드바 메뉴는 조직 이름별로 묶는다. 조직 표는 직접 읽지 못해 워크스페이스 정보 함수로 가져온다
+        infos = await asyncio.gather(*(g.rpc(token, 'passo_workspace_info', {'tid': w['id']}) for w in spaces[:50]), return_exceptions=True)
+        for w, info in zip(spaces, infos):
+            w['org'] = info.get('org') if isinstance(info, dict) else None
     return spaces
 
 
