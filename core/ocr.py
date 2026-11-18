@@ -176,12 +176,15 @@ def _overlap_x(a, b):
     return max(0, min(a[2], b[2]) - max(a[0], b[0])) / max(1, a[2] - a[0], b[2] - b[0])
 
 
-def place_all(cells, found):
+def place_all(cells, found, used=None):
     """두 번 짝짓는다. 첫 번째에서 글이 확실히 닮은 짝으로 Claude 의 대략의 상자가 위아래로 얼마나 쏠렸는지 재고,
-    각 값의 대략의 상자를 가까운 확실한 짝들의 쏠림만큼 옮겨 다시 짝짓는다(사진 아래로 갈수록 커지는 쏠림을 바로잡는다)."""
-    first, sure = _place(cells, found)
+    각 값의 대략의 상자를 가까운 확실한 짝들의 쏠림만큼 옮겨 다시 짝짓는다(사진 아래로 갈수록 커지는 쏠림을 바로잡는다).
+    used: 집합을 넘기면 값과 짝지어진 글줄 번호(found 안의 순서)를 더한다. 읽지 않은 곳을 셀 때 쓴다."""
+    first, sure, took = _place(cells, found)
     shifts = [(cells[ci][1][1], (first[ci][1] + first[ci][3] - cells[ci][1][1] - cells[ci][1][3]) / 2) for ci in sure]
     if len(shifts) < 3:
+        if used is not None:
+            used.update(took)
         return first
     moved = []
     for value, rough, label in cells:
@@ -190,7 +193,10 @@ def place_all(cells, found):
         near = sorted(shifts, key=lambda s: abs(s[0] - rough[1]))[:3]
         dy = sorted(s[1] for s in near)[1]
         moved.append((value, [rough[0], rough[1] + dy, rough[2], rough[3] + dy], label))
-    return _place(moved, found)[0]
+    out, _, took = _place(moved, found)
+    if used is not None:
+        used.update(took)
+    return out
 
 
 def _place(cells, found):
@@ -199,6 +205,8 @@ def _place(cells, found):
     글이 닮지 않아도 대략의 상자와 같은 열에서 가까우면 짝이 된다(흘려 쓴 손글씨). 짝이 없으면 대략의 상자를 그대로 쓴다."""
     pairs, sims = [], {}
     for ci, (value, rough, label) in enumerate(cells):
+        if not _norm(value):  # 빈 칸은 짝지을 글이 없다(칸 이름이 적힌 머리글과 짝짓지 않는다)
+            continue
         short = len(_norm(value)) <= 2
         for li, l in enumerate(found):
             b, sim = l["box"], _sim(value, l["text"])
@@ -230,13 +238,16 @@ def _place(cells, found):
                 if ci < cj and li != lj and (ci, lj) in score and (cj, li) in score \
                         and score[ci, lj] + score[cj, li] > score[ci, li] + score[cj, lj] + 1e-9:
                     pick[ci], pick[cj], better = lj, li, True
-    out, used = [c[1] for c in cells], set(pick.values())
-    done = set(pick)
-    for ci, li in pick.items():
+    out = [c[1] for c in cells]
+    for ci, li in list(pick.items()):
         box, rough = list(found[li]["box"]), cells[ci][1]
         if wide(ci, li):  # 한 글줄에 여러 값('찬성 7 반대 0'): 위아래는 글줄, 좌우는 대략의 상자
             box = [max(box[0], rough[0]), box[1], min(box[2], rough[2]), box[3]]
+            if box[0] >= box[2]:  # 대략의 상자가 그 글줄과 가로로 겹치지 않으면 다른 열의 글이다. 짝을 버린다
+                del pick[ci]
+                continue
         out[ci] = box
+    used, done = set(pick.values()), set(pick)
     for ci, (value, rough, _) in enumerate(cells):  # 긴 값: 바로 위아래로 이어지고 값에 든 글줄을 함께 감싼다
         box = out[ci]
         if ci in done and len(_norm(value)) > 15:
@@ -246,7 +257,77 @@ def _place(cells, found):
                     box = [min(box[0], b[0]), min(box[1], b[1]), max(box[2], b[2]), max(box[3], b[3])]; used.add(li)
             out[ci] = box
     sure = [ci for ci, li in pick.items() if cells[ci][1] and sims.get((ci, li), 0) >= 0.8 and len(_norm(cells[ci][0])) > 2]
-    return out, sure
+    return out, sure, used
+
+
+def calibrate(cells, found):
+    """쪽 전체에서 글이 확실히 같은 짝(값과 0.8 넘게 닮은 글줄이 그 쪽에 하나뿐)으로 Claude 의 세로 좌표가 실제보다
+    얼마나 늘거나 밀렸는지 잰다: 실제 y = a·y + b. 짝이 3개 안 되거나 비율이 터무니없으면 None(바로잡지 않는다).
+    cells: [(값, 대략의 상자 또는 None, 칸 이름)]"""
+    from itertools import combinations
+    pts = []
+    for value, rough, _ in cells:
+        if not rough or len(_norm(value)) <= 2:
+            continue
+        hits = [l for l in found if len(_norm(l["text"])) > 2 and _sim(value, l["text"]) >= 0.8]  # 한두 글자 글줄은 어디에나 들어맞는다
+        if len(hits) == 1:
+            pts.append((_center(rough)[1], _center(hits[0]["box"])[1]))
+    if len(pts) < 3:
+        return None
+    slopes = sorted((y2 - y1) / (x2 - x1) for (x1, y1), (x2, y2) in combinations(pts, 2) if abs(x2 - x1) > 20)
+    if not slopes:
+        return None
+    a = slopes[len(slopes) // 2]
+    if not 0.3 <= a <= 3:
+        return None
+    b = sorted(y - a * x for x, y in pts)[len(pts) // 2]
+    return a, b
+
+
+def stretch(box, fit):
+    """calibrate 로 잰 (a, b)로 상자의 세로 좌표를 바로잡는다. fit 이 없으면 그대로."""
+    if not box or not fit:
+        return box
+    a, b = fit
+    y0, y1 = (min(1000, max(0, round(a * y + b))) for y in (box[1], box[3]))
+    return [box[0], y0, box[2], y1] if y0 < y1 else box
+
+
+def bands(found):
+    """판독한 글줄(글자가 있고 확신 0.5 이상)을 가로줄로 묶는다. 세로 범위가 작은 쪽 높이의 절반 넘게 겹치면 같은 가로줄.
+    [(글줄 번호들, 감싸는 상자)]를 위에서 아래 순서로 돌려준다."""
+    out = []
+    keep = [i for i, l in enumerate(found) if l.get("conf", 0) >= 0.5 and _norm(l["text"])]
+    for i in sorted(keep, key=lambda i: found[i]["box"][1]):
+        b = found[i]["box"]
+        for idx, box in out:
+            if min(box[3], b[3]) - max(box[1], b[1]) >= 0.5 * min(box[3] - box[1], b[3] - b[1]):
+                idx.append(i)
+                box[:] = [min(box[0], b[0]), min(box[1], b[1]), max(box[2], b[2]), max(box[3], b[3])]
+                break
+        else:
+            out.append(([i], list(b)))
+    return out
+
+
+def unread(found, used, labels=()):
+    """읽은 값과 짝지어진 글줄이 하나도 없는 가로줄. 처음 읽은 가로줄보다 위(제목·머리글)와
+    칸 이름만 적힌 글줄은 셈하지 않는다. {"bands": 센 가로줄 수, "unread": [상자], "read_to": 마지막으로 읽은 가로줄의 아래}"""
+    names = sorted({_norm(x) for x in labels if _norm(x)}, key=len, reverse=True)
+
+    def header(text):
+        rest = full = _norm(text)
+        for n in names:
+            rest = rest.replace(n, "")
+        return rest != full and len(rest) <= 1
+
+    rows = [(any(i in used for i in idx), all(header(found[i]["text"]) for i in idx), box) for idx, box in bands(found)]
+    first = next((n for n, (hit, _, _) in enumerate(rows) if hit), None)
+    if first is None:
+        return {"bands": sum(not h for _, h, _ in rows), "unread": [b for _, h, b in rows if not h], "read_to": None}
+    rows = [r for r in rows[first:] if not r[1]]
+    return {"bands": len(rows), "unread": [b for hit, _, b in rows if not hit],
+            "read_to": max(b[3] for hit, _, b in rows if hit)}
 
 
 if __name__ == "__main__":

@@ -157,6 +157,7 @@ create table public.source_inputs (          -- 올린 사진이나 파일 1개,
   storage_path text,
   spans jsonb not null default '{}',          -- 읽은 칸 이름 → 원본 어디에 적혔나 [{page, quote, value, written, box, rec, unsure, cand}]. value 는 넣은 값(AI가 읽은 날짜 · 숫자를 코드가 적힌 글과 맞춰 본 것), written 은 그와 다를 때 적힌 글 그대로. box 는 AI가 적은 자리(쪽의 0~1000 비율), rec 는 이 종이의 몇 번째 기록(0부터, 종이 전체 칸은 없음), unsure 는 읽기 애매한 칸, cand 는 AI가 본 다른 후보 값. 확인 화면이 원본 위에 겹쳐 보여 준다
   auto boolean not null default false,        -- AI가 판단해 바로 반영한 종이. 7일 동안 되돌릴 수 있다
+  coverage jsonb,                             -- 원본에서 읽지 않은 곳: {unread: 수, pages: {쪽: {bands, unread: [상자 0~1000], read_to}}}. OCR 로 찾은 글줄 중 읽은 값과 짝지어지지 않은 가로줄
   created_by bigint references public.users(id),
   created_at timestamptz not null default now()
 );

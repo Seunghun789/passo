@@ -121,7 +121,7 @@ def install_routes(app, session, gateway):
         await g.authorize(token,tid)
         records, sources, proposals, props, aliases, objects = await asyncio.gather(
             rows(g,token,tid,'records','id,type_name,occurred_at,status,source_input_id',status='eq.확정'),
-            rows(g,token,tid,'source_inputs','id,name,channel,created_at,auto,storage_path'),
+            rows(g,token,tid,'source_inputs','id,name,channel,created_at,auto,storage_path,coverage'),
             rows(g,token,tid,'proposals','id,kind,status,source_input_id,created_at,evidence',status='eq.대기'),
             rows(g,token,tid,'property_defs','id,type_name,name,dtype,unit,position'),
             rows(g,token,tid,'alias_dict','id,type_name,alias,prop_name'),
@@ -139,6 +139,8 @@ def install_routes(app, session, gateway):
         for s in sources:
             own = [r for r in records if r['source_input_id']==s['id']]
             s['rows'] = len(own)
+            cov = s.pop('coverage', None)  # 목록에는 읽지 않은 곳 수만. 자리는 원본 보기(sources/{sid})에서 준다
+            s['unread'] = cov.get('unread') if cov else None
             s['types'] = list(dict.fromkeys(r['type_name'] for r in own))
             s['wait'] = sum(p['source_input_id']==s['id'] for p in checks)
             s['has_original'] = bool(s.pop('storage_path',None))
@@ -197,7 +199,7 @@ def install_routes(app, session, gateway):
     async def source(tid: int,sid: int,token=Depends(session),g=Depends(gateway)):
         await g.authorize(token,tid)
         found=(await g.request(token,'GET','/rest/v1/source_inputs',params={'tenant_id':f'eq.{tid}',
-            'id':f'eq.{sid}','select':'id,name,channel,spans,created_at,auto,storage_path'})).json()
+            'id':f'eq.{sid}','select':'id,name,channel,spans,coverage,created_at,auto,storage_path'})).json()
         if not found: raise HTTPException(404,'원본을 찾을 수 없습니다.')
         result=found[0];result['has_original']=bool(result.pop('storage_path',None))
         result['records']=await rows(g,token,tid,'records','id,type_name,occurred_at,data,status,source_row,uncertain,source_input_id',source_input_id=f'eq.{sid}')

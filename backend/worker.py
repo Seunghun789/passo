@@ -28,7 +28,7 @@ class Worker:
         return self.request('POST','/rest/v1/rpc/'+name,json=body or {}).json()
 
     def process(self, job):
-        from backend.extraction import run_ocr, run_model, run_structure, run_entities, make_payload
+        from backend.extraction import run_ocr, run_model, run_fill, run_structure, run_entities, make_payload
         stop, lost = threading.Event(), threading.Event()
         args = {'jid':job['id'],'fence':job['lease_token']}
         def heartbeat():
@@ -59,10 +59,13 @@ class Worker:
             if 'extraction' not in state:
                 state['extraction'] = run_model(content,job['media_type'],job.get('model_id'));save(state)
             uploaded = job.get('created_at') and datetime.fromisoformat(job['created_at']).astimezone(ZoneInfo('Asia/Seoul')).date().isoformat()
-            payload = make_payload(state['extraction']['sheet'],state['ocr'],uploaded)
+            if 'fill' not in state:  # 하네스: 아래쪽에 읽지 않은 줄이 남았으면 그 부분만 잘라 이어 읽는다
+                state['fill'] = run_fill(content,job['media_type'],state['extraction']['sheet'],state['ocr'],uploaded,job.get('model_id'));save(state)
+            sheet = state['fill']['sheet']
+            payload = make_payload(sheet,state['ocr'],uploaded)
             fetch = lambda table,params: self.request('GET','/rest/v1/'+table,params=params).json()
             if 'structure' not in state:
-                state['structure'] = run_structure(fetch,job['tenant_id'],state['extraction']['sheet'],
+                state['structure'] = run_structure(fetch,job['tenant_id'],sheet,
                                                    payload['records'],job.get('model_id'));save(state)
             from backend.structure import apply_splits
             apply_splits(payload,state['structure'].get('splits'))
@@ -87,7 +90,7 @@ class Worker:
         """이 종이를 읽으며 부른 AI(읽기 · 구조 · 대상)를 ai_logs 에 남긴다. 종이 내용과 답은 남기지 않는다.
         남기지 못해도 이미 반영한 종이는 그대로다."""
         from core.llm import PRICE
-        steps = [('읽기',[state.get('extraction',{}).get('usage') or {}]),('구조',state.get('structure',{}).get('usage') or []),
+        steps = [('읽기',[state.get('extraction',{}).get('usage') or {}]),('이어 읽기',state.get('fill',{}).get('usage') or []),('구조',state.get('structure',{}).get('usage') or []),
                  ('대상',state.get('entities',{}).get('usage') or [])]
         rows = []
         for step,usages in steps:

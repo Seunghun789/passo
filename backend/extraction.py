@@ -94,7 +94,14 @@ def make_payload(sheet, found, uploaded=None):
         assumed = {'value': occurred, 'written': raw_date if isinstance(raw_date, str) else ''}
     if not sheet.get('title') or not 1 <= len(sheet.get('rows',[])) <= 1000:
         raise ValueError('empty or oversized extraction')
-    records, spans = [], {}
+    def box(c):
+        b = c.get('box')
+        return b if isinstance(b,list) and len(b)==4 and all(isinstance(v,(int,float)) and 0<=v<=1000 for v in b) and b[0]<b[2] and b[1]<b[3] else None
+    every_cell = [*sheet.get('doc_fields',[]), *(c for r in sheet['rows'] for c in r['cells'])]
+    # 쪽마다 AI 의 세로 좌표가 실제보다 늘거나 밀린 정도를 한 번 재어 모든 대략의 상자를 바로잡는다
+    fits = {p: ocr.calibrate([(str(c.get('source_raw') or ''),box(c),c['label']) for c in every_cell if str(c.get('page',1))==p], lines)
+            for p,lines in found.items()}
+    records, spans, used = [], {}, {}
     for index, row in enumerate(sheet['rows']):
         cells = [*sheet.get('doc_fields',[]), *row['cells']]
         normalized = [{**c,'value':c.get('normal') or c.get('source_raw',c.get('value')),
@@ -104,19 +111,86 @@ def make_payload(sheet, found, uploaded=None):
                         'uncertain':[c['label'] for c in cells if c.get('uncertain') or c.get('unreadable')]})
         for page in {c.get('page',1) for c in cells}:
             group = [c for c in cells if c.get('page',1)==page]
-            def box(c):
-                b = c.get('box')
-                return b if isinstance(b,list) and len(b)==4 and all(isinstance(v,(int,float)) and 0<=v<=1000 for v in b) and b[0]<b[2] and b[1]<b[3] else None
             # A column header is not evidence for a short cell (e.g. row number 1).
             # Legacy OCR matching gives label text a bonus; exclude exact header-only lines here.
-            labels = {c['label'].strip() for c in cells}
-            lines = [line for line in found.get(str(page),[]) if line['text'].strip() not in labels]
-            placed = ocr.place_all([(str(c.get('source_raw') or ''),box(c),c['label']) for c in group],lines)
+            labels = {ocr._norm(c['label']) for c in cells}
+            every = found.get(str(page),[])
+            keep = [n for n,line in enumerate(every) if ocr._norm(line['text']) not in labels]  # '상 호'도 칸 이름 '상호'다
+            took = set()
+            fit = fits.get(str(page))
+            placed = ocr.place_all([(str(c.get('source_raw') or ''),ocr.stretch(box(c),fit),c['label']) for c in group],[every[n] for n in keep],took)
+            used.setdefault(str(page),set()).update(keep[n] for n in took)
             for n,c in enumerate(group):
                 spans.setdefault(c['label'],[]).append({'rec':index,'page':page,'quote':c.get('source_raw'),
                     'box':placed[n] if n < len(placed) else box(c),'model_box':box(c),'location':'estimated',
                     'unsure':c.get('uncertain',False),'unreadable':c.get('unreadable',False)})
-    result = {'records':records,'spans':spans}
+    names = [*sheet.get('columns',[]), *(c['label'] for c in sheet.get('doc_fields',[])), sheet['title']]
+    pages = {p: ocr.unread(lines, used.get(p,set()), names) for p,lines in found.items()}
+    result = {'records':records,'spans':spans,
+              'coverage':{'unread':sum(len(v['unread']) for v in pages.values()),'pages':pages}}
     if assumed:
         result['date_assumed'] = assumed
     return result
+
+
+def tails(coverage, least=3):
+    """쪽마다 마지막으로 읽은 가로줄 아래에 읽지 않은 가로줄이 least 곳 넘게 남으면 그 세로 범위 [위, 아래](0~1000)."""
+    out = {}
+    for page, v in coverage['pages'].items():
+        below = [b for b in v['unread'] if v['read_to'] is not None and b[1] >= v['read_to'] - 5]
+        if len(below) >= least:
+            # 이미 읽은 마지막 줄은 다시 자르지 않는다(같은 줄을 두 번 읽지 않게). 그 아래 줄은 위 끝까지 넣는다
+            out[page] = [max(0, min(b[1] for b in below) - 10, v['read_to'] - 3), min(1000, max(b[3] for b in below) + 10)]
+    return out
+
+
+def crop_rows(png, top, bottom):
+    """쪽 그림에서 세로 범위 [top, bottom](0~1000)를 가로 전체로 잘라 PNG 로."""
+    from PIL import Image
+    with Image.open(io.BytesIO(png)) as im:
+        W, H = im.size
+        part = im.crop((0, round(top*H/1000), W, round(bottom*H/1000)))
+        out = io.BytesIO(); part.save(out, format='PNG')
+    return out.getvalue()
+
+
+def merge_rows(sheet, more, page, top, bottom):
+    """잘라 읽은 표(more)의 줄을 쪽 좌표로 옮겨 그 쪽의 마지막 줄 뒤에 넣는다. 처음 보는 doc_fields 칸도 더한다. 넣은 줄 수."""
+    def move(box):
+        if not (isinstance(box, list) and len(box) == 4):
+            return None
+        return [box[0], round(top + box[1]*(bottom-top)/1000), box[2], round(top + box[3]*(bottom-top)/1000)]
+    rows = [{'cells':[{**c,'page':int(page),'box':move(c.get('box'))} for c in r['cells']]} for r in more.get('rows',[]) if r.get('cells')]
+    last = max((n for n, r in enumerate(sheet['rows']) if any(c.get('page',1) == int(page) for c in r['cells'])), default=len(sheet['rows'])-1)
+    sheet['rows'][last+1:last+1] = rows
+    known = {c['label'] for c in sheet.get('doc_fields',[])}
+    sheet.setdefault('doc_fields',[]).extend({**c,'page':int(page),'box':move(c.get('box'))} for c in more.get('doc_fields',[]) if c['label'] not in known)
+    return len(rows)
+
+
+def run_fill(content, mime, sheet, found, uploaded=None, model=None, rounds=3):
+    """하네스: 원본 아래쪽에 읽지 않은 가로줄이 남으면 그 부분만 잘라 AI 에게 이어서 읽힌다(최대 rounds 번).
+    더 읽히지 않거나 남은 곳이 줄지 않으면 멈춘다. {'sheet': 이어 붙인 표, 'usage': [AI 사용량]}"""
+    import copy
+    from core.llm import extract
+    sheet, usage, last = copy.deepcopy(sheet), [], None
+    selected = selected_model(model)
+    for _ in range(rounds):
+        gaps = tails(make_payload(sheet, found, uploaded)['coverage'])
+        if not gaps or gaps == last:
+            break
+        last, added = gaps, 0
+        hint = ("\n- 이 사진은 앞서 읽은 표의 아래쪽 부분만 잘라 낸 것이에요. 머리글이 보이지 않아도 같은 표예요. "
+                f"columns 의 label 은 {', '.join(sheet.get('columns',[]))} 를 같은 순서로 쓰고, 이 부분에 적힌 줄을 처음부터 끝까지 빠짐없이 모두 읽어 주세요.")
+        with ai_client() as client:
+            for page, (top, bottom) in gaps.items():
+                one = {}
+                def sink(t, model, prompt, answer, usage_in, usage_out, started):
+                    one.update(model=model,input_tokens=usage_in,output_tokens=usage_out,seconds=round(time.monotonic()-started,3))
+                more = extract(None, selected, 'part.png', crop_rows(page_image(content, mime, int(page)), top, bottom),
+                               api_client=client, log_sink=sink, hint=hint)
+                usage.append(one)
+                added += merge_rows(sheet, more, page, top, bottom)
+        if not added:
+            break
+    return {'sheet': sheet, 'usage': usage}

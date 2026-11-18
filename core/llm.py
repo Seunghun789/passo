@@ -267,17 +267,17 @@ class Rows:
             return None
 
 
-def extract(t, model, name, photo, on_rows=None, *, api_client=None, log_sink=None):
+def extract(t, model, name, photo, on_rows=None, *, api_client=None, log_sink=None, hint=""):
     """사진이나 PDF 1개를 읽는다. PDF 는 쪽마다 Claude 가 직접 읽는다. 생각 없이 바로 옮겨 적게 한다(thinking 참고).
     on_rows: 표의 줄을 하나 다 받을 때마다 그때까지 읽은 표(spread 모양)를 넘길 함수. 읽는 중 진행 표시와,
-    앞쪽 줄로 구조 제안을 먼저 시작하는 데 쓴다(engine.ingest_photo)."""
+    앞쪽 줄로 구조 제안을 먼저 시작하는 데 쓴다(engine.ingest_photo). hint: 읽기 지시 뒤에 덧붙일 글(잘라 낸 부분을 이어 읽을 때)."""
     if name.lower().endswith(".pdf"):
         part = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf",
                                                "data": base64.standard_b64encode(photo).decode()}}
     else:
         part = {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                             "data": base64.standard_b64encode(as_image(photo)).decode()}}
-    content = [part, {"type": "text", "text": EXTRACT_PROMPT + ("" if part["type"] == "document" else RULER_NOTE)}]
+    content = [part, {"type": "text", "text": EXTRACT_PROMPT + ("" if part["type"] == "document" else RULER_NOTE) + hint}]
     rows = Rows()
 
     def on_text(chunk):
