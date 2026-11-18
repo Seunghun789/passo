@@ -182,7 +182,7 @@ create table public.proposals (
   tenant_id bigint not null references public.tenants(id) on delete cascade,
   kind text not null check (kind in ('종류', '칸', '같은 칸', '애매한 값', '연결', '지표', '업무',
                                      '대상 분류', '대상', '같은 대상', '대상 속성', '속성 값', '상위 분류', '관계 속성', '칸 설정', '되돌리기', '워크스페이스 설정',
-                                     '읽은 값', '맡기기')),
+                                     '읽은 값', '맡기기', '뜻 확인')),
   payload jsonb not null,
   evidence jsonb,
   status text not null default '대기' check (status in ('대기', '승인', '고침', '거절')),

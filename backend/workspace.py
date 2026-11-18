@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from uuid import UUID
 
 CHECK_KINDS = ('종류','칸','같은 칸','애매한 값','읽은 값','대상 분류','대상','같은 대상',
-               '대상 속성','속성 값','상위 분류','관계 속성','연결','워크스페이스 설정','맡기기')
+               '대상 속성','속성 값','상위 분류','관계 속성','연결','워크스페이스 설정','맡기기','뜻 확인')
 
 
 async def rows(g, token, tid, table, select, **filters):
@@ -48,6 +48,17 @@ class ManualRecord(BaseModel):
     type_name: str = Field(min_length=1,max_length=200)
     occurred_at: date
     data: dict = Field(min_length=1,max_length=100)
+
+
+class MeaningAsk(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    said: str | None = Field(default=None, max_length=300)
+
+
+class MeaningApply(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    rule: dict
+    said: str | None = Field(default=None, max_length=300)
 
 
 class ReviewAnswer(BaseModel):
@@ -195,6 +206,82 @@ def install_routes(app, session, gateway):
     async def manual(tid: int, body: ManualRecord, token=Depends(session), g=Depends(gateway)):
         await g.authorize(token,tid,'upload')
         return await g.rpc(token,'passo_write_record',{'tid':tid,**body.model_dump(mode='json')})
+
+    async def meaning_card(g, token, tid, qid):
+        found = (await g.request(token, 'GET', '/rest/v1/proposals', params={'tenant_id': f'eq.{tid}', 'id': f'eq.{qid}',
+            'kind': 'eq.뜻 확인', 'status': 'eq.대기', 'select': 'id,payload,source_input_id'})).json()
+        if not found:
+            raise HTTPException(409, '이미 답한 카드예요. 확인 화면을 새로 열어 주세요.')
+        return found[0]
+
+    async def meaning_changes(g, token, tid, card, rule):
+        """같은 기록 종류의 기록에 규칙을 적용해 바뀌는 줄(기록 id → 새 칸 값)을 코드가 센다."""
+        from core import meaning
+        p = card['payload']
+        recs = await rows(g, token, tid, 'records', 'id,data,source_input_id', type_name=f"eq.{p['type']}")
+        changes, sample, here = {}, [], 0
+        for r in recs:
+            cell = (r.get('data') or {}).get(p['label'])
+            raw = cell.get('raw') if isinstance(cell, dict) else cell
+            got = meaning.apply(rule, raw)
+            if not got:
+                continue
+            changes[str(r['id'])] = got
+            here += r['source_input_id'] == card['source_input_id']
+            if len(sample) < 8:
+                sample.append({'written': str(raw), **got})
+        return changes, sample, here
+
+    @app.post('/v1/workspaces/{tid}/meanings/{qid}/preview')
+    async def meaning_preview(tid: int, qid: int, body: MeaningAsk, token=Depends(session), g=Depends(gateway)):
+        """뜻 확인: [직접 적기]의 한 줄 설명을 AI가 규칙으로 옮기고(없으면 AI가 짐작한 규칙), 바뀌는 줄을 코드가 센다."""
+        await g.authorize(token, tid, 'review')
+        import os, time
+        from core import llm, meaning
+        card = await meaning_card(g, token, tid, qid)
+        p, rule = card['payload'], card['payload'].get('guess')
+        said = (body.said or '').strip()
+        if said:
+            import anthropic
+            about = (await g.request(token, 'GET', '/rest/v1/tenants', params={'id': f'eq.{tid}', 'select': 'about'})).json()
+            usage, started = {}, time.monotonic()
+            def work():
+                with anthropic.Anthropic(**llm.connect(os.environ)) as client:
+                    return llm.meaning_rule(None, llm.DEFAULT, p['label'], p.get('examples') or [p.get('written')], said,
+                        (about[0].get('about') or '') if about else '', api_client=client,
+                        log_sink=lambda t, m, prompt, answer, i, o, s=None: usage.update(model=m, prompt=prompt, answer=answer, input_tokens=i, output_tokens=o))
+            try:
+                rule = await asyncio.to_thread(work)
+            except anthropic.APIError:
+                raise HTTPException(503, 'AI가 알아듣지 못했어요. 잠시 뒤 다시 적어 주세요.') from None
+            if usage:
+                price = llm.PRICE[usage['model']]
+                try:
+                    await g.rpc(token, 'passo_log_ai', {'tid': tid, **usage, 'cost_usd': round((usage['input_tokens']*price[0]+usage['output_tokens']*price[1])/1_000_000, 6),
+                                                       'duration_ms': round((time.monotonic()-started)*1000)})
+                except (HTTPException, ValueError):
+                    print('{"meaning":"usage_log_failed"}', flush=True)
+        rule = meaning.clean(rule, p['label'])
+        if not rule:
+            raise HTTPException(422, '알아듣지 못했어요. 표기와 뜻을 한 줄로 다시 적어 주세요. 예: 현수막, 700폭')
+        changes, sample, here = await meaning_changes(g, token, tid, card, rule)
+        understood = [{'written': h['written'], 'means': h['means'], 'into': f"새 칸 '{rule['head_col']}'" if rule['head_col'] else '—'} for h in rule['heads']]
+        if rule['number_col']:
+            understood.append({'written': '머리말 뒤의 숫자', 'means': rule['number_col'], 'into': f"새 칸 '{rule['number_col']}'(숫자)"})
+        return {'rule': rule, 'understood': understood, 'rows': len(changes), 'here': here, 'before': len(changes) - here, 'sample': sample}
+
+    @app.post('/v1/workspaces/{tid}/meanings/{qid}/apply')
+    async def meaning_apply(tid: int, qid: int, body: MeaningApply, token=Depends(session), g=Depends(gateway)):
+        """뜻 확인 [맞아요] · [적용]: 서버가 같은 규칙으로 바뀌는 줄을 다시 세어 DB 함수로 쓴다(적힌 글은 그대로)."""
+        await g.authorize(token, tid, 'review')
+        from core import meaning
+        card = await meaning_card(g, token, tid, qid)
+        rule = meaning.clean(body.rule, card['payload']['label'])
+        if not rule:
+            raise HTTPException(422, '규칙을 다시 확인해 주세요.')
+        changes, _, _ = await meaning_changes(g, token, tid, card, rule)
+        await g.rpc(token, 'passo_apply_meaning', {'tid': tid, 'qid': qid, 'rule': rule, 'changes': changes, 'said': (body.said or '').strip() or None})
+        return {'rows': len(changes)}
 
     @app.get('/v1/workspaces/{tid}/notes')
     async def notes(tid: int, token=Depends(session), g=Depends(gateway)):

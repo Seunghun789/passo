@@ -116,7 +116,7 @@ def test_worker_uses_selected_model_and_legacy_original(monkeypatch):
                'sha256':hashlib.sha256(b'original').hexdigest(), 'byte_size':8,
                'media_type':'image/png', 'model_id':'claude-opus-5-5', 'original_bucket':'uploads'})
     assert calls == ['passo_worker_save', 'model', 'passo_worker_save', 'passo_worker_save', 'structure', 'passo_worker_save',
-                     'entities', 'passo_worker_save', 'passo_worker_finish']
+                     'entities', 'passo_worker_save', 'passo_worker_save', 'passo_worker_finish']
 
 
 def test_worker_logs_ai_usage_without_paper_content():

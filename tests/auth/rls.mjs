@@ -61,6 +61,7 @@ try {
  await db.exec(await readFile('db/migrations/025_read_coverage.sql','utf8'));
  await db.exec(await readFile('db/migrations/026_job_step.sql','utf8'));
  await db.exec(await readFile('db/migrations/027_reading_notes.sql','utf8'));
+ await db.exec(await readFile('db/migrations/028_meanings.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);
@@ -92,6 +93,19 @@ try {
  await denied('A cannot remove B reading note',()=>as(1,'select public.passo_reading_note_remove(2,2)'));
  check('owner removes a reading note',(await as(1,'select public.passo_reading_note_remove(1,1) ok'))[0].ok===true);
  check('removed note is kept with removed_at',(await as(1,'select removed_at from public.reading_notes where id=1'))[0].removed_at!==null);
+ await db.exec(`insert into public.proposals(tenant_id,kind,payload,source_input_id) values(1,'뜻 확인','{"type":"A","label":"memo"}',1),(2,'뜻 확인','{"type":"B","label":"memo"}',2)`);
+ const qA=(await db.query("select id from public.proposals where kind='뜻 확인' and tenant_id=1")).rows[0].id, qB=(await db.query("select id from public.proposals where kind='뜻 확인' and tenant_id=2")).rows[0].id;
+ const rule={heads:[{written:'현',means:'현수막'}],head_col:'품목',number_col:'폭'};
+ const mr=(await db.query(`insert into public.records(tenant_id,type_name,occurred_at,data,source_input_id) values(1,'A','2026-11-13','{"memo":"현 700"}',1) returning id`)).rows[0].id;
+ await denied('viewer cannot apply a meaning',()=>as(3,'select public.passo_apply_meaning($1,$2,$3,$4)',[1,qA,rule,{[mr]:{'폭':700}}]));
+ await denied('A cannot apply a B meaning',()=>as(1,'select public.passo_apply_meaning($1,$2,$3,$4)',[2,qB,rule,{2:{'폭':700}}]));
+ await denied('meaning cannot write a column outside the rule',()=>as(1,'select public.passo_apply_meaning($1,$2,$3,$4)',[1,qA,rule,{[mr]:{quantity:5}}]));
+ await denied('meaning cannot touch another tenant record',()=>as(1,'select public.passo_apply_meaning($1,$2,$3,$4)',[1,qA,rule,{2:{'폭':700}}]));
+ check('owner applies a meaning',(await as(1,'select public.passo_apply_meaning($1,$2,$3,$4) ok',[1,qA,rule,{[mr]:{'품목':'현수막','폭':700}}]))[0].ok===true);
+ check('meaning adds number column and value',(await db.query("select dtype from public.property_defs where tenant_id=1 and type_name='A' and name='폭'")).rows[0]?.dtype==='number'
+  && (await db.query("select data->'폭'->>'value' v from public.records where id=$1",[mr])).rows[0].v==='700');
+ check('meaning is kept as a reading note',(await db.query("select count(*)::int n from public.reading_notes where tenant_id=1 and kind='뜻 풀이'")).rows[0].n===1);
+ await denied('a meaning card is answered once',()=>as(1,'select public.passo_apply_meaning($1,$2,$3,$4)',[1,qA,rule,{[mr]:{'폭':700}}]));
  await denied('authenticated cannot write reading notes directly',()=>as(1,"insert into public.reading_notes(tenant_id,kind,label) values(1,'고친 글씨','x')"));
  for (const table of ['users','org_members','memberships','invites','auth_identity_links','ai_logs','chat_sessions','eval_votes','passo_checkpoints']) {
   await denied(`authenticated cannot read private ${table}`,()=>as(1,`select * from public.${table}`));

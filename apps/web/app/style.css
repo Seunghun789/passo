@@ -175,3 +175,4 @@ button.danger{background:#b91c1c;border-color:#b91c1c;color:#fff}button.danger:h
 }
 .review-actions .candidate{border:1px solid #5eead4;background:var(--accent-bg);color:#115e59}.hint-known{font-size:12.5px;color:#115e59;background:var(--accent-bg);border-radius:8px;padding:8px 10px;margin:8px 0 0}
 .notes-table td{white-space:normal}
+.meaning-same{font-size:12.5px;margin:0}.meaning-preview{margin-top:12px;font-size:13px}.meaning-preview table{margin:6px 0 12px}.meaning-preview b{display:inline-block;margin-top:6px}

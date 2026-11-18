@@ -28,7 +28,7 @@ class Worker:
         return self.request('POST','/rest/v1/rpc/'+name,json=body or {}).json()
 
     def process(self, job):
-        from backend.extraction import run_ocr, run_model, run_fill, run_tables, run_structure, run_entities, make_payload, reading_notes
+        from backend.extraction import run_ocr, run_model, run_fill, run_tables, run_structure, run_entities, make_payload, reading_notes, apply_meanings, run_meanings
         stop, lost = threading.Event(), threading.Event()
         args = {'jid':job['id'],'fence':job['lease_token']}
         def heartbeat():
@@ -78,9 +78,18 @@ class Worker:
             payload['entities'] = {k:state['entities'][k] for k in ('classes','entities','same')}
             for record in payload['records']:
                 record['type_name'] = payload['structure']['type']
+            apply_meanings(payload,notes.get('rules',[]))  # 사람이 확인한 뜻 풀이는 묻지 않고 칸으로 푼다
+            if 'meaning' not in state:  # 새로 되풀이되는 짧은 표기는 AI가 뜻을 짐작해 "뜻 확인" 카드로 올린다
+                state['meaning'] = run_meanings(payload,notes,sheet.get('columns',[]),job.get('model_id'));save(state)
             if lost.is_set() or not self.rpc('passo_worker_finish',{**args,'payload':payload}):
                 raise RuntimeError('lease_lost')
             print(json.dumps({'job':job['id'],'status':'published','records':len(payload['records'])}),flush=True)
+            for card in state['meaning'].get('cards',[]):  # 반영이 끝난 뒤 올린다. 실패해도 반영한 기록은 그대로다
+                try:
+                    self.request('POST','/rest/v1/proposals',json={'tenant_id':job['tenant_id'],'kind':'뜻 확인','payload':card,
+                        'evidence':{'user':False},'source_input_id':job['source_input_id']},headers={'Prefer':'return=minimal'})
+                except Exception:
+                    print(json.dumps({'job':job['id'],'meaning':'card_failed'}),flush=True)
             self.log_usage(job,state)
         except Exception as exc:
             # No model output, document content, credentials or transport exceptions in logs.
@@ -93,7 +102,7 @@ class Worker:
         """이 종이를 읽으며 부른 AI(읽기 · 구조 · 대상)를 ai_logs 에 남긴다. 종이 내용과 답은 남기지 않는다.
         남기지 못해도 이미 반영한 종이는 그대로다."""
         from core.llm import PRICE
-        steps = [('읽기',[state.get('extraction',{}).get('usage') or {}]),('이어 읽기',state.get('fill',{}).get('usage') or []),('구조',state.get('structure',{}).get('usage') or []),
+        steps = [('읽기',[state.get('extraction',{}).get('usage') or {}]),('이어 읽기',state.get('fill',{}).get('usage') or []),('뜻 확인',state.get('meaning',{}).get('usage') or []),('구조',state.get('structure',{}).get('usage') or []),
                  ('대상',state.get('entities',{}).get('usage') or [])]
         rows = []
         for step,usages in steps:

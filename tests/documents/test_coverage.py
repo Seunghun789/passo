@@ -135,7 +135,7 @@ def test_reading_notes_missing_table_reads_without_notes():
     from backend.extraction import reading_notes
     def fetch(table, params):
         raise RuntimeError('worker_gateway_404')
-    assert reading_notes(fetch, 7) == {'hint': '', 'answers': 0, 'names': 0, 'names_list': []}
+    assert reading_notes(fetch, 7) == {'hint': '', 'answers': 0, 'names': 0, 'names_list': [], 'rules': []}
 
 
 def test_close_name_becomes_candidate():
@@ -145,3 +145,24 @@ def test_close_name_becomes_candidate():
     s = sheet(['파트라인1'])
     p = make_payload(s, {'1': []}, names=['파트라인'])
     assert p['spans']['품명'][0]['known'] == '파트라인' and p['spans']['품명'][0]['cand'][0] == '파트라인'
+
+
+def test_known_meaning_rule_fills_new_cells_without_asking():
+    from backend.extraction import apply_meanings
+    rule = {'type': '거래 내역', 'label': '품명', 'heads': [{'written': '현', 'means': '현수막'}], 'head_col': '품목', 'number_col': '폭'}
+    payload = {'structure': {'type': '거래 내역'}, 'records': [{'data': {'품명': {'raw': '현 \\700'}}}, {'data': {'품명': {'raw': '개 \\914'}}}]}
+    assert apply_meanings(payload, [rule]) == 2
+    assert payload['records'][0]['data']['품목']['value'] == '현수막' and payload['records'][0]['data']['폭']['value'] == 700
+    assert '품목' not in payload['records'][1]['data']
+
+
+def test_repeated_short_notation_becomes_meaning_card(monkeypatch):
+    import contextlib
+    from backend import extraction
+    monkeypatch.setattr(extraction, 'ai_client', lambda: contextlib.nullcontext())
+    monkeypatch.setattr('core.llm.meaning_rule', lambda *a, **k: {'meaning': '품목 현수막 · 폭 700', 'heads': [{'written': '현수', 'means': '현수막'}, {'written': '현', 'means': '현수막'}], 'head_col': '품목', 'number_col': '폭'})
+    payload = {'structure': {'type': '거래 내역'}, 'records': [{'data': {'품명': {'raw': v}}} for v in ['현수 \\700', '현수 \\500', '현 \\700', '나이스']]}
+    out = extraction.run_meanings(payload, {'rules': [], 'names_list': []}, ['품명'], model='claude-sonnet-5-5')
+    card = out['cards'][0]
+    assert card['label'] == '품명' and card['rows'] == 3 and card['guess']['number_col'] == '폭' and set(card['heads']) == {'현수', '현'}
+    assert extraction.run_meanings(payload, {'rules': [{'heads': [{'written': '현수'}, {'written': '현'}]}], 'names_list': []}, ['품명'])['cards'] == []

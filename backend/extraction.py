@@ -1,5 +1,6 @@
 """Pure extraction + provenance adapter; never imports legacy DB or writes records."""
 import io
+import json
 import os
 import time
 from datetime import date
@@ -184,7 +185,7 @@ def reading_notes(fetch, tid, limit=40):
             return fetch(table, params)
         except Exception:
             return []
-    notes = get('reading_notes', {'tenant_id':f'eq.{tid}','removed_at':'is.null','select':'kind,label,written,value',
+    notes = get('reading_notes', {'tenant_id':f'eq.{tid}','removed_at':'is.null','select':'kind,label,written,value,rule',
                                   'order':'created_at.desc','limit':str(limit)})
     names = list(dict.fromkeys(r['name'] for r in get('entities', {'tenant_id':f'eq.{tid}','select':'name','order':'id.desc','limit':'300'}) if r.get('name')))
     fixed = [n for n in notes if n['kind'] == '고친 글씨']
@@ -198,7 +199,71 @@ def reading_notes(fetch, tid, limit=40):
         lines.append('확정한 이름: ' + ', '.join(names[:150]))
     hint = ('\n- 아래는 이 워크스페이스에서 사람이 확인한 것이에요. 같은 사람이 적은 종이라 비슷하게 생긴 글씨는 참고해서 읽되, '
             '적힌 것과 다르면 적힌 그대로 읽으세요.\n  ' + '\n  '.join(lines)) if lines else ''
-    return {'hint': hint, 'answers': len(notes), 'names': len(names), 'names_list': names}
+    rules = list({json.dumps(n['rule'], sort_keys=True, ensure_ascii=False): n['rule'] for n in meant if isinstance(n.get('rule'), dict)}.values())
+    return {'hint': hint, 'answers': len(notes), 'names': len(names), 'names_list': names, 'rules': rules}
+
+
+def apply_meanings(payload, rules):
+    """사람이 확인한 뜻 풀이 규칙(core/meaning.py)을 새 기록에 적용한다. 같은 기록 종류의 규칙만, 이미 있는 칸은 두고 빈 칸만 채운다."""
+    from core import meaning
+    kind = (payload.get('structure') or {}).get('type')
+    filled = 0
+    for rule in rules:
+        if rule.get('type') != kind:
+            continue
+        for rec in payload['records']:
+            cell = rec['data'].get(rule.get('label'))
+            raw = cell.get('raw') if isinstance(cell, dict) else cell
+            for k, v in meaning.apply(rule, raw).items():
+                if k not in rec['data']:
+                    rec['data'][k] = {'version':'cell-state-v1','raw':v,'value':v,'status':'value'}
+                    filled += 1
+    return filled
+
+
+def run_meanings(payload, notes, columns, model=None, most=2):
+    """되풀이되는 짧은 표기(한글 머리말 + 숫자)를 찾아 AI에게 뜻을 짐작시키고 "뜻 확인" 카드 내용으로 돌려준다.
+    이미 뜻을 아는 머리말과 확정한 이름은 묻지 않는다. 찾은 것이 없으면 AI를 부르지 않는다."""
+    from core import meaning
+    from core.llm import meaning_rule
+    kind = (payload.get('structure') or {}).get('type')
+    known = {h['written'] for r in notes.get('rules', []) for h in r.get('heads', [])}
+    found = []
+    for label in columns:
+        values = []
+        for rec in payload['records']:
+            cell = rec['data'].get(label)
+            values.append(cell.get('raw') if isinstance(cell, dict) else cell)
+        found += [(label, g) for g in meaning.shapes(values, known, notes.get('names_list', ()))]
+
+    def context(label, examples):  # 짐작을 돕도록 그 표기가 적힌 줄의 다른 칸(값이 있는 것만, 줄마다 5칸까지)
+        out = []
+        for rec in payload['records']:
+            cells = {k: (v.get('raw') if isinstance(v, dict) else v) for k, v in rec['data'].items()}
+            if str(cells.get(label) or '').strip() in examples and len(out) < 5:
+                out.append(', '.join(f"{k}: {v}" for k, v in cells.items() if v not in (None, '') )[:200])
+        return out
+    cards, usage = [], []
+    if not found:
+        return {'cards': cards, 'usage': usage}
+    selected = selected_model(model)
+    with ai_client() as client:
+        for label, g in sorted(found, key=lambda x: -x[1]['rows'])[:most]:
+            one = {}
+            def sink(t, model, prompt, answer, usage_in, usage_out, started):
+                one.update(model=model,input_tokens=usage_in,output_tokens=usage_out,seconds=round(time.monotonic()-started,3))
+            try:
+                rule = meaning.clean(meaning_rule(None, selected, label, g['examples'], api_client=client, log_sink=sink,
+                                                  rows=context(label, g['examples'])), label)
+            except Exception as exc:  # 짐작하지 못하면 카드를 올리지 않는다
+                print(f"뜻 짐작 실패: {type(exc).__name__}", flush=True)
+                rule = None
+            if one:
+                usage.append(one)
+            if rule:
+                cards.append({'type': kind, 'label': label, 'written': g['examples'][0], 'heads': g['heads'],
+                              'examples': g['examples'], 'rows': g['rows'], 'guess': rule})
+    return {'cards': cards, 'usage': usage}
 
 
 def known_name(value, names, least=0.75):

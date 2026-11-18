@@ -372,6 +372,28 @@ def read_ranges(t, label, values):
     return ask_json(t, SMALL, prompt, RANGE_READ, prompt, effort="off")["values"]
 
 
+MEANING = obj(meaning=S, heads=array(obj(written=S, means=S)), head_col=nullable(S), number_col=nullable(S))
+
+
+def meaning_rule(t, model, label, examples, said=None, about="", api_client=None, log_sink=None, rows=()):
+    """손으로 적은 짧은 표기(예: '현수 \\700')의 뜻을 규칙으로 받는다(core/meaning.py 가 적용한다).
+    said 가 있으면 사람이 적은 한 줄 설명을 규칙으로 옮기고, 없으면 가장 그럴듯한 뜻을 짐작한다. 숫자는 옮기지 않는다."""
+    prompt = (
+        f"손으로 적은 장부의 '{label}' 칸에 이런 짧은 표기가 되풀이돼요: {examples}\n"
+        + (f"그 표기가 적힌 줄(같은 줄의 다른 칸): {list(rows)}\n" if rows else "")
+        + (f"이 워크스페이스: {about}\n" if about else "")
+        + (f"사람이 알려 준 뜻: \"{said}\"\n이 설명을 규칙으로 옮겨 주세요. 설명에 없는 것은 지어내지 마세요.\n" if said
+           else "표기의 뜻을 짐작해 주세요. 확실하지 않아도 가장 그럴듯한 뜻으로.\n")
+        + "- heads: 표기 앞의 한글(머리말)마다 written 에 적힌 그대로, means 에 그 뜻(예: written '현수', means '현수막'). 같은 뜻의 줄임말은 모두.\n"
+        "- head_col: 머리말의 뜻을 넣을 칸 이름(예: '품목'). 짧은 명사.\n"
+        "- number_col: 표기 속 숫자가 뜻하는 것을 넣을 칸 이름(예: '폭'). 숫자에 따로 뜻이 없으면 null.\n"
+        "- meaning: 첫 예시의 뜻을 한 줄로(예: '품목 현수막 · 폭 700').\n"
+        "숫자는 옮기지 마세요. 숫자는 코드가 표기에서 읽어요."
+    )
+    return ask_json(t, model, prompt, MEANING, f"[뜻 확인 {label}] {prompt}", effort="low" if said else "off",
+                    api_client=api_client, log_sink=log_sink)
+
+
 def suggest_workspace(t, type_name, columns):
     """첫 종이로 워크스페이스 이름·업종·대표 제품·기록하는 것을 제안한다. 사용자가 고쳐 [맞아요]로 확정한다."""
     prompt = (
