@@ -210,4 +210,6 @@ button.danger{background:#b91c1c;border-color:#b91c1c;color:#fff}button.danger:h
 .four-steps .dropzone{flex-direction:column;align-items:stretch}.four-steps .dropzone>div{flex-wrap:wrap}
 @media(max-width:1050px){.four-steps{grid-template-columns:1fr 1fr}.step-card+.step-card::before{display:none}}
 @media(max-width:768px){.ghost-cols,.ghost-two,.ghost-side,.ghost-side.wide,.four-steps{grid-template-columns:1fr}}
-
+.undo-confirm{flex-basis:100%;border:1px dashed #f59e0b;background:#fffbeb;border-radius:10px;padding:10px 12px;font-size:13px}.undo-confirm p{margin:4px 0 8px}.undo-confirm .row-actions{display:flex;gap:8px}
+.auto-note{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 12px;font-size:13px}
+.paper-row{flex-wrap:wrap}
