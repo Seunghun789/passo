@@ -10,16 +10,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 이 폴더
 
-passo(손으로 적은 종이 → AI가 판단해 반영 → 위험한 값만 사람에게 확인 → 묻기·대시보드·자동화)의 기획 문서와 웹 프로토타입이 있다.
+passo(손으로 적은 종이 → AI가 판단해 반영 → 위험한 값만 사람에게 확인 → 묻기·대시보드·자동화)의 기획 문서와 서비스 코드가 있다.
 
-- 실행: `.venv/bin/python -m streamlit run app.py` (`.env`에 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `ANTHROPIC_API_KEY`. `RUNYOUR_API_KEY`를 더하면 AI 호출이 Runyour를 거친다)
-- 사진 위치를 찾는 OCR 모델은 서버가 처음 사진을 읽을 때 `models/ocr/`(git 제외)에 받는다. 받지 못하면 서버 로그에 남기고, 위치는 Claude가 어림한 상자로 그려진다.
-- 코드를 바꾸면 `app.py`든 `core/`든 켜 둔 Streamlit 서버를 껐다 다시 켠다. 파일 감시를 꺼 둬서(`fileWatcherType = "none"`) 새로고침만으로는 예전 코드가 그대로 돈다.
-- 코드: `app.py`(화면), `core/db.py`(Supabase, 계정별), `core/llm.py`(모든 Claude 호출), `core/ocr.py`(사진 속 위치), `core/engine.py`(규칙·계산·제안 적용)
-- DB 스키마: `db/schema.sql`. 새 DB에서는 이 파일을 한 번 실행한다. 이전 표는 `legacy` 스키마에 있다.
-- 가설 검증용 더미 데이터: `dummy/`(제조 설비 점검 CSV·`photos/`, `samples/`의 생산 검사·유통 재고·공인중개사 메모, `db/`의 더미 계정 내보내기). 랜딩의 "활용 사례"에서만 `dummy/db/` 1~4번이 메모리로 열리고, 누른 것은 DB에 쓰지 않는다. 올린 파일은 `data/uploads/`(git 제외)
-- 워크스페이스: 주소 `?a=번호`로 잇고, 사이드바 워크스페이스 메뉴에서 고른다. 로그인은 Google과 이메일·비밀번호이고, 쿠키 `ps_login`으로 이어진다. 관리자는 Google 메일이 `ADMIN_EMAILS`에 있는 사람이다. 주인이 있는 워크스페이스는 구성원만 열고, 다른 사람은 초대 링크(`?invite=`)로 들어온다. 더미 워크스페이스는 `?a=1`~`4`로만 열린다
-- 빌드·린트 명령과 테스트 파일은 없다. 확인은 `streamlit.testing.v1.AppTest`로 화면을 열어 본다. 읽기 품질은 `.venv/bin/python -m eval.grade`(정답지 채점)로 잰다. Claude를 실제로 불러 비용이 들고, 결과는 `data/grade/`(git 제외)에 남는다.
+- 구성: 웹 `apps/web`(Next.js, Vercel), API `backend/`(FastAPI, Google Cloud Run 도쿄), 종이를 읽는 워커 `backend/worker.py`(Mac의 Docker `passo-worker-1`), DB·원본 파일 Supabase(도쿄). 배포 자리와 키 넣는 곳은 `DEPLOY.md`.
+- 코드: `apps/web`(화면), `backend/`(API·워커), `core/llm.py`(모든 Claude 호출), `core/ocr.py`(사진 속 위치·읽지 않은 곳), `core/engine.py`(규칙·계산·제안), `app.py`(초기 Streamlit 프로토타입)
+- 배포: `main`에 푸시하면 CI가 시험한 뒤 API를 Cloud Run에 배포하고, 웹은 Vercel이 배포한다. DB 마이그레이션(`db/migrations/`)은 따로 적용한다.
+- 워커: `docker compose -p passo up -d worker`. `backend/`·`core/`를 바꾸면 `--build`를 붙여 다시 만든다. 워커가 꺼져 있으면 올린 종이가 "읽기 대기"에 머문다.
+- DB 스키마: `db/schema.sql` 다음에 `db/migrations/`를 번호 순서로 적용한다.
+- 사진 위치를 찾는 OCR 모델은 처음 사진을 읽을 때 `models/ocr/`(git 제외)에 받는다.
+- 확인: `python -m pytest tests -q`(API·워커), `apps/web`에서 `npm run typecheck`. 읽기 품질은 `python -m eval.grade`(정답지 채점, Claude를 실제로 불러 비용이 든다), 위치는 `eval/place.py`로 잰다.
+- 가설 검증용 더미 데이터: `dummy/`(제조 설비 점검 CSV·`photos/`, `samples/`의 생산 검사·유통 재고·공인중개사 메모, `db/`의 더미 계정 내보내기)
+- 로그인은 Supabase Auth(Google, 이메일·비밀번호, 카카오)다. 관리자는 로그인 메일이 API의 `ADMIN_EMAILS`에 있는 사람이다.
 - 기획 문서: `PRD.md`, `tasks.md`, `build-decisions.md`, `progress.md`, `backlog.md`(더할 새 기능 후보), `idea/`
 
 ## 문서 작성 규칙
