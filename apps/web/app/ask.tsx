@@ -13,7 +13,7 @@ export default function Ask({request,go}:{request:Request,go:(view:string)=>void
  async function send(e:React.FormEvent){e.preventDefault();const q=question.trim();
   if(!q){setError('질문을 적어 주세요.');return;}
   setBusy(true);setError('');
-  try{setAnswer(await request('ask',{method:'POST',body:JSON.stringify({question:q,model})}));}
+  try{setAnswer(await request('ask',{method:'POST',body:JSON.stringify({question:q,model})}));window.dispatchEvent(new Event('passo-first-answer'));}  // 처음 한 바퀴 띠는 첫 답을 받으면 사라진다
   catch(err){setError((err as Error).message==='요청을 처리하지 못했어요. 다시 시도해 주세요.'?'답하지 못했어요. 잠시 뒤 다시 눌러 주세요.':(err as Error).message);}
   finally{setBusy(false);}}
  const columns=answer?[...new Set(answer.evidence.flatMap(r=>Object.keys(r)).filter(k=>!k.startsWith('_')))]:[];

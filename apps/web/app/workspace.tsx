@@ -6,7 +6,8 @@ import StructureReview from './structure-review';
 import MeaningReview from './meaning-review';
 import ValuePanel from './value-panel';
 import WorkspacePicker from './workspace-picker';
-import PolicyReview,{ReadReview} from './policy-review';
+import {ReadReview} from './policy-review';
+import {EmptyState,EMPTY_VIEWS,FourSteps,FirstRunBand,StepTrail} from './onboarding';
 import Reread,{RereadStatus} from './reread';
 import Ask from './ask';
 import {Automation,Dashboard,HomeAlerts,Periods,WeekSummary} from './insights';
@@ -47,6 +48,7 @@ export default function Workspace({workspaces,selected,initial,view:initialView,
  const go=(next:string)=>{setView(next);setMobile(false);setError('');window.scrollTo(0,0);const u=new URL(location.href);u.searchParams.set('workspace',String(tid));u.searchParams.set('view',next);history.pushState({},'',u);};
  useEffect(()=>{const back=()=>setView(new URL(location.href).searchParams.get('view')||'home');window.addEventListener('popstate',back);return()=>window.removeEventListener('popstate',back);},[]);
  const canReview=!!selected&&['주인','확인하는 사람'].includes(selected.role),canUpload=!!selected&&selected.role!=='보는 사람';
+ const fresh=!!data&&!data.record_count&&EMPTY_VIEWS.includes(view)&&!(view==='review'&&data.review_count);  // 기록이 없을 때: 메뉴마다 빈 틀
  return <div className="workspace-shell">
  <header className="phone-top"><b>{selected?.title||'passo'}</b></header>
  <button className="mobile-menu" onClick={()=>setMobile(!mobile)} aria-label="메뉴 열기">☰ <span>passo</span></button>
@@ -57,15 +59,17 @@ export default function Workspace({workspaces,selected,initial,view:initialView,
  <details className="account"><summary><span className="avatar">{name.slice(0,2)}</span>{name} · {selected?.role||'계정'}</summary><p className="muted account-email">{email}</p><a className="button" href="/account">내 계정</a><form action={logout}><button>로그아웃</button></form></details></aside>
  <main className="workspace-main">{!selected||!data?<div className="empty"><h1>워크스페이스</h1><p>연결된 워크스페이스가 없거나 접근할 수 없어요.</p></div>:<>
  {error&&<div className="error" role="alert">{error}</div>}
- {view==='home'&&<Home data={data} name={name} title={selected.title} go={go} refresh={refresh} onError={setError} request={request} tid={tid!} records={<Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh} go={go}/>}/>}
+ <FirstRunBand tid={tid!} records={data.record_count} view={view} go={go}/>
+ {fresh&&<EmptyState view={view} go={go}/>}
+ {view==='home'&&!fresh&&<Home data={data} name={name} title={selected.title} go={go} refresh={refresh} onError={setError} request={request} tid={tid!} records={<Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh} go={go}/>}/>}
  {view==='upload'&&<Upload data={data} tid={tid!} canUpload={canUpload} canReview={canReview} request={request} refresh={refresh} go={go}/>}
- {view==='review'&&<Reviews data={data} tid={tid!} request={request} canReview={canReview} refresh={refresh} go={go}/>}
- {view==='records'&&<><h1>기록</h1><p className="muted">쌓인 기록을 표로 보고, 칸을 누르면 원본과 나란히 확인할 수 있어요.</p><Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh} go={go}/></>}
- {view==='ask'&&<Ask request={request} go={go}/>}
- {view==='dashboard'&&<Dashboard request={request} tid={tid!} go={go}/>}
- {view==='automation'&&<Automation request={request} tid={tid!} go={go}/>}
- {view==='entities'&&<Entities request={request} go={go}/>}
- {view==='graph'&&<KnowledgeGraph request={request} go={go}/>}
+ {view==='review'&&!fresh&&<Reviews data={data} tid={tid!} request={request} canReview={canReview} refresh={refresh} go={go}/>}
+ {view==='records'&&!fresh&&<><h1>기록</h1><p className="muted">쌓인 기록을 표로 보고, 칸을 누르면 원본과 나란히 확인할 수 있어요.</p><Records data={data} request={request} tid={tid!} canReview={canReview} refresh={refresh} go={go}/></>}
+ {view==='ask'&&!fresh&&<Ask request={request} go={go}/>}
+ {view==='dashboard'&&!fresh&&<Dashboard request={request} tid={tid!} go={go}/>}
+ {view==='automation'&&!fresh&&<Automation request={request} tid={tid!} go={go}/>}
+ {view==='entities'&&!fresh&&<Entities request={request} go={go}/>}
+ {view==='graph'&&!fresh&&<KnowledgeGraph request={request} go={go}/>}
  {view==='settings'&&<Settings request={request}/>}
  {view==='more'&&<More workspaces={workspaces} selected={selected} go={go} admin={admin}/>}
  {!VIEWS.includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
@@ -121,11 +125,12 @@ function Upload({data,tid,canUpload,canReview,request,refresh,go}:{data:Overview
  async function open(s:Source){setSource(null);setSourceError('');try{setSource(await request(`sources/${s.id}`));}catch(e){setSourceError((e as Error).message);}}
  const active=jobs.filter(j=>['uploading','queued','running','failed','awaiting_review','succeeded'].includes(j.status)).slice(0,8);
  const groups=group==='올린 날 순'?[['올린 종이',data.sources] as const]:Array.from(new Set(data.sources.map(s=>s.wait?'확인 중':s.types[0]||'반영된 기록 없음'))).map(k=>[k,data.sources.filter(s=>(s.wait?'확인 중':s.types[0]||'반영된 기록 없음')===k)] as const);
- return <><h1>올리기</h1><p className="muted">손글씨 사진이든 파일이든 그대로 올려 주세요. 무슨 기록인지 고르지 않아도 돼요.</p>
+ const first=!data.record_count&&!data.sources.length;
+ return <>{first&&<StepTrail view="upload"/>}<h1>올리기</h1><p className="muted">{first?'종이 한 장을 올리면 아래 순서로 채워져요.':'손글씨 사진이든 파일이든 그대로 올려 주세요. 무슨 기록인지 고르지 않아도 돼요.'}</p>
  <div className="tabs" role="tablist">{[['file','사진·파일'],['manual','직접 적기'],['papers',`올린 종이 ${data.sources.length}`]].map(([k,l])=><button role="tab" aria-selected={tab===k} key={k} onClick={()=>{setTab(k);setError('');setNotice('');}}>{l}</button>)}</div>
  {error&&<p className="error" role="alert">{error}</p>}{notice&&<p className="success" role="status">{notice}</p>}
  {tab==='file'&&<>{canUpload?<><form onSubmit={upload} className="phone-capture"><h2>쓰던 종이를 그대로 찍어 주세요</h2><div className="photo-slot">{preview?<img src={preview} alt="찍은 사진"/>:file?<b>{file.name}</b>:<><b>사진 자리</b><small>종이가 화면에 다 들어오게</small></>}</div><p className="muted">종이에 적힌 다른 사람의 정보는 올리는 분이 처리할 권한이 있어야 해요.</p><div className="capture-actions"><label className="button">앨범에서<input type="file" accept="image/*,application/pdf" onChange={e=>pick(e.target.files?.[0]||null)}/></label><label className="shutter">찍기<input type="file" accept="image/*" capture="environment" onChange={e=>pick(e.target.files?.[0]||null)}/></label><button className="primary" disabled={busy||!file}>{busy?'올리는 중…':'읽기 시작'}</button></div></form>
- <form onSubmit={upload} className="desk-upload"><label className="upload-label" htmlFor="document-file">사진이나 파일을 여기로 끌어 놓으세요</label><div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();pick(e.dataTransfer.files[0]||null);}}><div><Icon name="upload"/><span>{file?file.name:'PNG·JPEG·PDF'}</span><small>파일당 4MB · PDF 30쪽까지</small></div><label className="button">파일 고르기<input id="document-file" aria-label="문서 파일" type="file" accept="image/png,image/jpeg,application/pdf" onChange={e=>pick(e.target.files?.[0]||null)}/></label></div><p className="muted">AI가 원본을 읽고 기록을 자동으로 반영해요. 애매한 값은 확인 화면에서 물어요. 종이에 적힌 다른 사람의 정보는 올리는 분이 처리할 권한이 있어야 해요.</p><button className="primary" disabled={busy}>{busy?'올리는 중…':'읽기 시작'}</button></form></>:<p className="info">보는 사람은 종이를 올리거나 적지 않아요. 기존 문서와 기록은 볼 수 있어요.</p>}
+ {first?<FourSteps><form onSubmit={upload} className="desk-upload"><label className="upload-label" htmlFor="document-file">사진이나 파일을 여기로 끌어 놓으세요</label><div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();pick(e.dataTransfer.files[0]||null);}}><div><Icon name="upload"/><span>{file?file.name:'PNG·JPEG·PDF'}</span><small>파일당 4MB · PDF 30쪽까지</small></div><label className="button">파일 고르기<input id="document-file" aria-label="문서 파일" type="file" accept="image/png,image/jpeg,application/pdf" onChange={e=>pick(e.target.files?.[0]||null)}/></label></div><p className="muted">AI가 원본을 읽고 기록을 자동으로 반영해요. 애매한 값은 확인 화면에서 물어요. 종이에 적힌 다른 사람의 정보는 올리는 분이 처리할 권한이 있어야 해요.</p><button className="primary" disabled={busy}>{busy?'올리는 중…':'읽기 시작'}</button></form></FourSteps>:<form onSubmit={upload} className="desk-upload"><label className="upload-label" htmlFor="document-file">사진이나 파일을 여기로 끌어 놓으세요</label><div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();pick(e.dataTransfer.files[0]||null);}}><div><Icon name="upload"/><span>{file?file.name:'PNG·JPEG·PDF'}</span><small>파일당 4MB · PDF 30쪽까지</small></div><label className="button">파일 고르기<input id="document-file" aria-label="문서 파일" type="file" accept="image/png,image/jpeg,application/pdf" onChange={e=>pick(e.target.files?.[0]||null)}/></label></div><p className="muted">AI가 원본을 읽고 기록을 자동으로 반영해요. 애매한 값은 확인 화면에서 물어요. 종이에 적힌 다른 사람의 정보는 올리는 분이 처리할 권한이 있어야 해요.</p><button className="primary" disabled={busy}>{busy?'올리는 중…':'읽기 시작'}</button></form>}</>:<p className="info">보는 사람은 종이를 올리거나 적지 않아요. 기존 문서와 기록은 볼 수 있어요.</p>}
  {active.map(j=><div className="panel job" key={j.id}><b>{data.sources.find(s=>s.id===j.source_input_id)?.name||'올린 종이'}</b><span className="chip wait">{j.reread_revision&&j.status==='succeeded'?'재읽기 완료 · 확인 필요':jobLabels[j.status]}</span>{j.status==='running'&&<JobSteps step={j.step} rows={j.read_rows}/>}<p className="muted">{j.status==='succeeded'?(j.reread_revision?'새로 읽은 내용을 확인 화면에서 확인해 주세요.':`기록에 반영했어요. ${unreadText(data.sources.find(s=>s.id===j.source_input_id)?.unread)}${notesText(data.sources.find(s=>s.id===j.source_input_id)?.notes)}애매한 칸은 확인 화면에서 볼 수 있어요.`):j.status==='queued'?'차례가 되면 자동으로 읽어요.':j.status==='failed'?'원본은 보관되어 있어요. 파일을 확인한 뒤 다시 올려 주세요.':'다른 화면으로 가도 계속 정리해요.'}</p>{j.status==='succeeded'&&<button onClick={()=>go(j.reread_revision?'review':'records')}>{j.reread_revision?'새 확인 카드 보기':'기록 보기'}</button>}{j.status==='awaiting_review'&&<button onClick={()=>go('review')}>확인으로</button>}</div>)}</>}
  {tab==='manual'&&(canUpload?(type?<form className="manual-form" onSubmit={manual} onChange={()=>{if(notice)setNotice('');}}><label>기록 종류<select value={type} onChange={e=>{setType(e.target.value);manualKey.current='';}}>{data.types.map(t=><option key={t.name}>{t.name}</option>)}</select></label><label>날짜<input required type="date" name="date" defaultValue={new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Seoul'})}/></label><div className="manual-fields">{data.properties.filter(p=>p.type_name===type&&p.name!=='날짜').map(p=><label key={p.id}>{p.name}{p.unit?` (${p.unit})`:''}<input name={`field-${p.id}`} type={p.dtype==='date'?'date':'text'} inputMode={p.dtype==='number'?'decimal':undefined} maxLength={10000} placeholder={p.dtype==='number'?'숫자 · 미기재는 -':''}/></label>)}</div><button className="primary" disabled={busy}>{busy?'저장 중…':'저장'}</button></form>:<p className="info">종이를 한 장 읽으면 여기서 같은 칸으로 바로 적을 수 있어요.</p>):<p className="info">직접 입력할 권한이 없어요.</p>)}
  {tab==='papers'&&<><div className="toolbar"><p className="muted">AI가 정리한 기록 종류별로 묶었어요.</p><div className="segments">{['기록 종류별','올린 날 순'].map(g=><button key={g} aria-pressed={group===g} onClick={()=>setGroup(g)}>{g}</button>)}</div></div>{groups.map(([title,sources],i)=><details className="paper-group" key={title} open={i===0}><summary><b>{title}</b> <span>종이 {sources.length}장 · 기록 {sources.reduce((a,s)=>a+s.rows,0)}줄</span></summary>{sources.map(s=><div className="paper-row" key={s.id}><div className="thumb">{s.has_original?<img loading="lazy" src={`/api/workspaces/${tid}/business/sources/${s.id}/original?page=1`} alt="올린 원본"/>:s.channel==='직접 입력'?'직접 입력':'원본 없음'}</div><div className="paper-name"><b>{s.name||'이름 없음'}</b><small>{s.channel} · {s.types.join(', ')}</small></div><span>{s.created_at.slice(0,10)}</span><span className={`chip ${s.wait?'wait':'done'}`}>{s.wait?`확인 중 ${s.wait}개`:`기록 ${s.rows}줄`}</span>{!!s.unread&&<span className="chip wait">읽지 않은 곳 {s.unread}</span>}<button onClick={()=>open(s)}>보기</button></div>)}</details>)}{!data.sources.length&&<p className="empty">아직 올린 종이가 없어요.</p>}{sourceError&&<p role="alert" className="error">{sourceError}</p>}{source&&<div className="panel"><div className="toolbar"><h2>{source.name}</h2><button onClick={()=>setSource(null)}>닫기</button></div>{canReview&&source.has_original&&<Reread sid={source.id} request={request} onStarted={()=>go('review')}/>}<Evidence detail={source} tid={tid}/></div>}</>}
@@ -215,6 +220,6 @@ function Reviews({data,tid,request,canReview,refresh,go}:{data:Overview,tid:numb
  </div>{mode==='모아 보기'&&next&&<button onClick={()=>load(next)} disabled={loading}>다음 카드 더 불러오기</button>}</>}
  {!loading&&!rereading&&!items.length&&<div className="finished"><span className="finished-icon">✓</span><h2>지금 확인할 것은 다 봤어요</h2><p>기록은 내 기록에 쌓여 있어요. 새 종이를 올리면 필요한 것만 다시 물어요.</p><button className="primary" onClick={()=>go('home')}>홈으로</button></div>}
  {legacyJobs.map(j=><div className="panel" key={j.id}><b>이전 방식으로 처리된 문서</b><p>이 문서는 이관 전에 읽어 확정을 기다리고 있어요.</p>{canReview&&<button disabled={busy} onClick={()=>confirm(j)}>내용 확인 후 확정</button>}</div>)}
- <PolicyReview sources={data.sources} request={request} canReview={canReview} onDone={async()=>{await load();await refresh();}}/>
+
  </>;
 }
