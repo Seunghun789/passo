@@ -7,16 +7,15 @@
 묶은 실행 패키지이며 클라우드 자체가 아니다. 로컬 Docker는 맥의 Linux VM에서
 실행되므로 맥을 끄거나 절전하면 API와 워커도 멈춘다.
 
-개인 학습용 개발 배포는 Next.js(Vercel Hobby), FastAPI(Render Free Web Service),
+개발 배포는 Next.js(Vercel Hobby, 도쿄 함수), FastAPI(Google Cloud Run, 도쿄),
 Python OCR/AI 워커(맥의 로컬 Docker), Supabase Free(DB/Auth/private Storage)로 구성한다.
 모델 API를 제외한 유료 플랜·유료 추가 기능은 사용하지 않는다. 이전 월 $32 제안은 폐기했다.
-Render는 무료 Background Worker를 제공하지 않으며, 실제 OCR 최대 메모리 측정값도
-약 1,034 MiB로 Free Web Service의 512 MB를 초과한다.
+실제 OCR 최대 메모리 측정값이 약 1,034 MiB라 워커는 API 서버와 따로 돈다.
 맥이 꺼지거나 절전하면 새 작업은 큐에서 기다린다. 워커를 다시 실행하면 처리된다.
 맥으로 외부 접속을 열 필요는 없다. 워커가 Supabase에 HTTPS로 접속해 작업을 가져온다.
 원본 파일·기록·큐·체크포인트는 Supabase에 저장하고 컨테이너 디스크에 의존하지 않는다.
 OCR은 워커 CPU의 ONNX 모델이 실행한다. 문서 해석 모델은 기존 Anthropic API를
-호출하므로 모델 가중치/GPU를 맥이나 Render에 올리는 구성이 아니다.
+호출하므로 모델 가중치/GPU를 맥이나 Cloud Run에 올리는 구성이 아니다.
 
 처리 경계
 ---------
@@ -73,21 +72,16 @@ schema.sql과 migrations 001~007가 적용된 Supabase 프로젝트, 연결된 �
 API는 localhost:8001, 웹은 localhost:3001이다. 실 키를 파일에 넣는 경우 0600 권한을
 사용한다. 로컬 Docker는 개발 검증 수단이며 외부 클라우드 배포 완료를 뜻하지 않는다.
 
-Render / Vercel — 무료 구성
---------------------------
-render.yaml에는 싱가포르 API Free 서비스 1개만 정의한다. 유료 워커 정의는 제거했다.
+Cloud Run / Vercel
+------------------
+API는 Google Cloud Run ``passo-api``(asia-northeast1)에서 돈다. main 에 푸시해 CI 를 통과하면
+GitHub Actions 가 키 파일 없이(Workload Identity Federation) 컨테이너를 만들어 배포하고 ``/health`` 의 version 을 확인한다.
+CPU 1개 · 메모리 1GiB · 서버 0~2대이며, 쉬면 0대로 줄었다가 요청이 오면 켜진다.
 Dockerfile의 기본 최종 이미지는 가벼운 API이며 OCR 모델/ONNX를 포함하지 않는다.
 로컬 Compose는 worker stage를 명시적으로 선택한다. 클라우드 API 사용 시 맥에서는
 ``docker compose up -d --build worker``만 실행하면 된다.
-자동 배포는 off이며 개발 작업 브랜치를 명시해 main과 분리한다.
-Vercel은 개인 비상업용 Hobby, 프로젝트 루트 apps/web, framework Next.js로 선택한다.
-기본 제공 vercel.app/onrender.com 주소를 사용하고 유료 도메인을 구매하지 않는다.
-Render Free는 15분 유휴 후 멈추며 재기동에 약 1분 걸릴 수 있다. 웹 API fetch는
-90초, 해당 페이지/문서 프록시의 플랫폼 실행 한도는 300초로 설정한다.
-무료 시간을 늘리기 위한 인위적 keep-alive는 사용하지 않는다.
-Render는 월 750 Free instance hours를 워크스페이스에서 공유한다. 대역폭/빌드 한도
-초과 비용이 생기지 않도록 결제 수단 없는 무료 워크스페이스로 배포하며, 한도에 도달하면
-정지·대기한다. 기존 결제 수단이 있다면 배포 전에 지출 제한을 확인한다.
+Vercel은 Hobby, 프로젝트 루트 apps/web, framework Next.js, 함수 지역 hnd1(도쿄)이다.
+기본 제공 vercel.app · run.app 주소를 사용한다.
 Supabase Free는 DB 500 MB, 파일 1 GB, egress 5 GB 및 cached egress 5 GB 한도이며,
 1주 비활성 프로젝트는 일시 정지될 수 있다. 한도 초과 시 자동 유료 전환하지 않는다.
 이는 배포 목표 설정이다. 실제 계정 요금제와 서비스 생성·HTTPS 검증 결과는 별도로 확인한다.
@@ -113,9 +107,7 @@ Docker worker가 재선점하고 실제 모델을 호출한다. 강제 종료 �
 참고
 ----
 https://docs.docker.com/faqs/platform/
-https://render.com/docs/background-workers
-https://render.com/docs/free
-https://render.com/docs/blueprint-spec
+https://cloud.google.com/run/docs
 https://vercel.com/docs/plans/hobby
 https://vercel.com/docs/functions/limitations
 https://supabase.com/pricing
@@ -192,7 +184,7 @@ passo_rule_propose로 카드로 올리고, [나중에]는 passo_rule_settle로 �
 Vega-Lite 명세에는 서비스가 고른 기록 줄을 넣고, 꾸밈은 engine.VIEW_STYLE 하나다. 웹은 vega-embed로 그린다.
 올린 일정 달력은 GET /v1/workspaces/{tid}/widgets/{wid}/calendar(mode · offset)로 넘긴다.
 
-"오늘"은 서버 시간대로 센다. API 서버는 TZ=Asia/Seoul로 띄운다(render.yaml).
+"오늘"은 서버 시간대로 센다. API 서버는 TZ=Asia/Seoul로 띄운다(CI 의 Cloud Run 배포 단계).
 달력의 빈 날을 눌러 직접 적기는 이 단계에 포함하지 않는다.
 
 검증: tests/documents/test_insights.py(권한 · 서버가 다시 만든 규칙만 넣기 · 기록에서 센 숫자 · 요약 사용 기록),

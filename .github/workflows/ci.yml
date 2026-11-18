@@ -1,7 +1,6 @@
 # 푸시와 PR마다 API 테스트 · DB 권한 테스트 · 웹 빌드를 돌린다.
-# main 에서 모두 통과하면 이 커밋의 API 를 배포하고, /healthz 의 version 이 이 커밋이 될 때까지 기다린다.
-# - 'API 배포 (Cloud Run)': 저장소 변수 GCP_PROJECT · GCP_SERVICE_ACCOUNT · GCP_WIF_PROVIDER 가 있으면(deploy/cloud-run-setup.sh) 도쿄 Cloud Run 에
-# - 'API 배포': 저장소 비밀값 RENDER_DEPLOY_HOOK_URL 이 있으면 Render Deploy Hook 으로(Render 쪽 Auto-Deploy 는 Off)
+# main 에서 모두 통과하면 'API 배포 (Cloud Run)'이 이 커밋의 API 를 도쿄 Cloud Run 에 배포하고, /health 의 version 이 이 커밋이 될 때까지 기다린다.
+# 저장소 변수 GCP_PROJECT · GCP_SERVICE_ACCOUNT · GCP_WIF_PROVIDER 가 있어야 돈다(deploy/cloud-run-setup.sh).
 name: CI
 
 on:
@@ -56,33 +55,6 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ci-placeholder
           PASSO_API_URL: http://localhost:8003
 
-  deploy:
-    name: API 배포
-    needs: [api, web]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Render에 이 커밋 배포 요청
-        env:
-          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-        run: |
-          if [ -z "$HOOK" ]; then echo "::warning::RENDER_DEPLOY_HOOK_URL 이 없어 API 배포를 건너뛰어요"; exit 0; fi
-          code=$(curl -sS -X POST -o /dev/null -w '%{http_code}' "$HOOK&ref=$GITHUB_SHA")
-          echo "Render 응답 $code"
-          [ "$code" = 200 ] || [ "$code" = 202 ] || { echo "::error::Render가 배포 요청을 받지 않았어요 ($code)"; exit 1; }
-      - name: 새 코드가 뜰 때까지 기다리기
-        env:
-          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-        run: |
-          [ -n "$HOOK" ] || exit 0
-          want=${GITHUB_SHA:0:7}
-          for i in $(seq 1 60); do
-            got=$(curl -sS --max-time 90 https://passo-dev-api.onrender.com/healthz | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)
-            echo "지금 운영: ${got:-?} / 기다리는 것: $want"
-            [ "$got" = "$want" ] && exit 0
-            sleep 15
-          done
-          echo "::error::15분 안에 새 코드가 뜨지 않았어요. Render Events 를 확인해 주세요"; exit 1
 
   cloudrun:
     name: API 배포 (Cloud Run)

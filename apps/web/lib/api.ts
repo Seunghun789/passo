@@ -7,7 +7,7 @@ export async function apiResponse(path: string, init: RequestInit = {}, passthro
   const { data: { session } } = await sb.auth.getSession();
   if (!session) redirect('/login');
   const r = await fetch(process.env.PASSO_API_URL! + path, {
-    // Render Free can take about a minute to wake after becoming idle.
+    // 묻기 · 주간 요약은 AI 답을 기다리므로 넉넉히 둔다.
     ...init, cache:'no-store', redirect:'error', signal: AbortSignal.timeout(90000),
     headers:{'Content-Type':'application/json',...init.headers,'Authorization':`Bearer ${session.access_token}`},
   });

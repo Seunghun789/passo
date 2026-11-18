@@ -125,7 +125,7 @@ eval/evaluate_policy_remaining.py는 기존 requirements.txt의 OCR/모델 의�
 --------------
 기존 Streamlit은 기존 인증과 서버 권한 DB 경로를 사용한다. 새 권한 경계로
 서비스 전체가 전환됐다고 보지 않는다. 기존 이메일 계정 연결은 남아 있다.
-개발 웹은 Vercel Hobby, API는 Render Free, 워커는 로컬 Mac Docker에서 실행한다.
+개발 웹은 Vercel Hobby, API는 Google Cloud Run(도쿄), 워커는 로컬 Mac Docker에서 실행한다.
 문서 업로드→PostgreSQL 작업 큐→독립 OCR/AI 워커→자동 반영→예외 확인→원본 근거 UI를
 추가했다. 재현·배포 절차와 한계는 backend/DOCUMENTS.rst를 참고한다.
 LangGraph는 이번 경로에 넣지 않았다. 모바일 기본 탐색을 추가했고 레이트리밋,
@@ -148,7 +148,7 @@ LangGraph는 이번 경로에 넣지 않았다. 모바일 기본 탐색을 추�
   node tests/auth/origin.mjs
   .venv-auth/bin/python -m pytest tests/auth tests/documents -q
   # 실 DB 임시 계정/워크스페이스 생성과 정리; 기존 데이터 전체 해시 비교
-  .venv-auth/bin/python eval/verify_workspace_live.py --web https://passo-dev.vercel.app --api https://passo-dev-api.onrender.com --writes --legacy --output artifacts/ui-migration/cloud-final
+  .venv-auth/bin/python eval/verify_workspace_live.py --web https://passo-dev.vercel.app --api https://passo-api-1019208018056.asia-northeast1.run.app --writes --legacy --output artifacts/ui-migration/cloud-final
 
 화면 비교는 원본 app.py에 읽기 전용 임시 세션을 주입한다. DB 쓰기와 규칙 호출은 차단한다.
 동시 실환경 쓰기 테스트는 전체 데이터 해시 검사와 충돌하므로 순서대로 실행한다.

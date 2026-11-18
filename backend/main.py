@@ -123,8 +123,8 @@ async def session(authorization: Annotated[str | None, Header()] = None, g=Depen
 @app.get('/healthz')
 @app.get('/health')  # Cloud Run 은 z 로 끝나는 주소(/healthz)를 자기 것으로 막아 두어 서버까지 오지 않는다
 def health():
-    # 지금 돌고 있는 커밋(Cloud Run 은 CI 가 APP_VERSION 으로, Render 는 스스로 넣어 준다). CI 배포 단계가 새 코드가 떴는지 이것으로 본다
-    return {'status':'ok','version':(os.environ.get('APP_VERSION') or os.environ.get('RENDER_GIT_COMMIT',''))[:7]}
+    # 지금 돌고 있는 커밋(CI 가 APP_VERSION 으로 넣는다). CI 배포 단계가 새 코드가 떴는지 이것으로 본다
+    return {'status':'ok','version':os.environ.get('APP_VERSION','')[:7]}
 
 
 @app.get('/v1/workspaces')
