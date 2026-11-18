@@ -8,6 +8,8 @@ import Reread,{RereadStatus} from './reread';
 import Ask from './ask';
 import {Automation,Dashboard,HomeAlerts,Periods,WeekSummary} from './insights';
 import {Entities,KnowledgeGraph} from './knowledge';
+import {fitPhoto} from '../lib/photo';
+import {LegalLinks} from './legal';
 
 type W={id:number,title:string,role:string};
 type Cell={raw:unknown,value:unknown,status:string};
@@ -24,20 +26,23 @@ const jobLabels:Record<string,string>={uploading:'파일 저장 중',queued:'읽
 const display=(value:unknown):string=>value===null||value===undefined?'—':typeof value==='object'?JSON.stringify(value):String(value);
 function raw(value:Row['data'][string]){return value&&typeof value==='object'?value.raw:value;}
 function status(value:Row['data'][string]){return value&&typeof value==='object'?labels[value.status]||value.status:'기존 값';}
+const VIEWS=['home','upload','review','records','ask','dashboard','automation','entities','graph','settings','more'];
+const TABS:[string,string][]=[['home','홈'],['upload','올리기'],['review','확인'],['ask','묻기'],['more','더 보기']];  // 폰 폭의 아래 탭
 const navGroups:[string,[string,string][]][]=[['',[['home','홈']]],['① 종이',[['upload','올리기']]],['② 확인',[['review','확인'],['entities','대상'],['graph','지식그래프']]],['③ 내 기록',[['records','기록'],['dashboard','대시보드'],['automation','자동화']]],['④ 묻기',[['ask','묻기']]]];
 function Icon({name}:{name:string}){const paths:Record<string,string>={upload:'M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5',review:'M18 8a6 6 0 0 0-12 0v6l-2 3h16l-2-3V8M10 21h4',dashboard:'M4 20V10m8 10V4m8 16v-7',automation:'M4 10a8 8 0 0 1 14-5l2 3m0-5v5h-5M20 14a8 8 0 0 1-14 5l-2-3m0 5v-5h5',ask:'M4 3h16v14H9l-5 4V3'};return <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]||paths.ask}/></svg>;}
 
 export default function Workspace({workspaces,selected,initial,view:initialView,name,email,admin}:{workspaces:W[],selected?:W,initial:Overview|null,view:string,name:string,email:string,admin:boolean}){
- const [view,setView]=useState(['home','upload','review','records','ask','dashboard','automation','entities','graph','settings'].includes(initialView)?initialView:'home');
+ const [view,setView]=useState(VIEWS.includes(initialView)?initialView:'home');
  const [data,setData]=useState(initial),[mobile,setMobile]=useState(false),[find,setFind]=useState(''),[error,setError]=useState('');
  const tid=selected?.id,base=`/api/workspaces/${tid}/business`;
  const request=useCallback(async(path:string,init:RequestInit={})=>{const r=await fetch(`${base}/${path}`,{...init,headers:{'Content-Type':'application/json',...init.headers}});if(r.redirected||r.status===401){window.location.href='/login';throw Error('다시 로그인해 주세요.');}if(!r.ok){let detail='요청을 처리하지 못했어요. 다시 시도해 주세요.';if(r.status===409)detail='다른 곳에서 수정됐어요. 새로고침한 뒤 다시 확인해 주세요.';else if(r.status===403)detail='이 작업을 할 권한이 없어요.';else if(r.status===404)detail='저장된 원본을 찾을 수 없어요.';throw Error(detail);}return r.json();},[base]);
  const refresh=useCallback(async(period?:string)=>{if(tid)setData(await request(`overview?period=${encodeURIComponent(period||data?.period||'이번 주')}`));},[tid,request,data?.period]);
  useEffect(()=>{if(tid)request('opened',{method:'POST',body:'{}'}).catch(()=>setError('마지막 워크스페이스를 저장하지 못했어요. 새로고침해 다시 시도해 주세요.'));},[tid,request]);
- const go=(next:string)=>{setView(next);setMobile(false);setError('');const u=new URL(location.href);u.searchParams.set('workspace',String(tid));u.searchParams.set('view',next);history.pushState({},'',u);};
+ const go=(next:string)=>{setView(next);setMobile(false);setError('');window.scrollTo(0,0);const u=new URL(location.href);u.searchParams.set('workspace',String(tid));u.searchParams.set('view',next);history.pushState({},'',u);};
  useEffect(()=>{const back=()=>setView(new URL(location.href).searchParams.get('view')||'home');window.addEventListener('popstate',back);return()=>window.removeEventListener('popstate',back);},[]);
  const canReview=!!selected&&['주인','확인하는 사람'].includes(selected.role),canUpload=!!selected&&selected.role!=='보는 사람';
  return <div className="workspace-shell">
+ <header className="phone-top"><b>{selected?.title||'passo'}</b></header>
  <button className="mobile-menu" onClick={()=>setMobile(!mobile)} aria-label="메뉴 열기">☰ <span>passo</span></button>
  <aside className={`sidebar ${mobile?'open':''}`}><a className="brand" href="/">passo</a>
  <details className="workspace-picker"><summary>{selected?.title||'워크스페이스 고르기'} <span>⌄</span></summary><div className="workspace-options"><input aria-label="나의 워크스페이스 검색" placeholder="나의 워크스페이스 검색" value={find} onChange={e=>setFind(e.target.value)}/>{workspaces.filter(w=>w.title.includes(find)).map(w=><a key={w.id} href={`/?workspace=${w.id}&view=${view}`}>{w.title}<small>{w.id===tid?'✓':w.role}</small></a>)}<div className="picker-actions">{selected&&<button type="button" onClick={()=>go('settings')}>워크스페이스 관리</button>}<a className="button" href="/workspaces">모두 보기</a><form action={createWorkspace}><input type="hidden" name="title" value="새 워크스페이스"/><button type="submit">워크스페이스 생성</button></form></div></div></details>
@@ -56,8 +61,24 @@ export default function Workspace({workspaces,selected,initial,view:initialView,
  {view==='entities'&&<Entities request={request} go={go}/>}
  {view==='graph'&&<KnowledgeGraph request={request} go={go}/>}
  {view==='settings'&&<Settings request={request}/>}
- {!['home','upload','review','records','ask','dashboard','automation','entities','graph','settings'].includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
- </>}</main></div>;
+ {view==='more'&&<More workspaces={workspaces} selected={selected} go={go} admin={admin}/>}
+ {!VIEWS.includes(view)&&<><h1>{navGroups.flatMap(x=>x[1]).find(x=>x[0]===view)?.[1]}</h1><div className="empty"><p>이 화면은 다음 이관 단계에서 연결합니다.</p><button onClick={()=>go('home')}>홈으로</button></div></>}
+ </>}</main>
+ <nav className="tabbar" aria-label="아래 탭">{TABS.map(([key,label])=><button key={key} aria-current={view===key||(key==='more'&&!TABS.some(t=>t[0]===view))?'page':undefined} onClick={()=>go(key)}>{label}{key==='review'&&!!data?.review_count&&<span className="count">{data.review_count}</span>}</button>)}</nav></div>;
+}
+
+// 폰 폭의 [더 보기]: 워크스페이스 [바꾸기], 넓은 화면에 맞춘 웹 화면, 내 계정
+function More({workspaces,selected,go,admin}:{workspaces:W[],selected?:W,go:(v:string)=>void,admin:boolean}){
+ const [picking,setPicking]=useState(false);
+ const web:[string,string][]=[['dashboard','대시보드'],['automation','자동화'],['entities','대상'],['graph','지식그래프'],['settings','워크스페이스 관리']];
+ return <div className="more"><p className="muted">워크스페이스</p>
+  <div className="more-space"><b>{selected?.title||'워크스페이스'}</b><button onClick={()=>setPicking(!picking)}>바꾸기</button></div>
+  {picking&&<div className="more-list">{workspaces.map(w=><a key={w.id} href={`/?workspace=${w.id}&view=home`}>{w.title}<small>{w.id===selected?.id?'지금':w.role}</small></a>)}<a href="/workspaces">모두 보기<small /></a></div>}
+  <p className="muted">웹에서 열기</p>
+  <div className="more-list">{web.map(([key,label])=><button key={key} onClick={()=>go(key)}>{label}<small>웹에서 열려요</small></button>)}{admin&&<a href="/admin">관리<small>관리자</small></a>}</div>
+  <p className="muted">나</p>
+  <div className="more-list"><a href="/account">내 계정<small>이름 · 이메일 · 계정 지우기</small></a></div>
+  <LegalLinks/></div>;
 }
 
 type RequestFn=(path:string,init?:RequestInit)=>Promise<any>;
@@ -84,6 +105,9 @@ function Upload({data,tid,canUpload,canReview,request,refresh,go}:{data:Overview
  const uploadKey=useRef(''),manualKey=useRef('');const [type,setType]=useState(data.types[0]?.name||'');
  const [source,setSource]=useState<Detail|null>(null),[sourceError,setSourceError]=useState('');
  const [group,setGroup]=useState('기록 종류별');
+ const [preview,setPreview]=useState('');
+ useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview);},[preview]);
+ async function pick(f:File|null){setError('');uploadKey.current='';if(!f){setFile(null);setPreview('');return;}try{const fitted=await fitPhoto(f);setFile(fitted);setPreview(fitted.type.startsWith('image/')?URL.createObjectURL(fitted):'');}catch(e){setFile(null);setPreview('');setError((e as Error).message);}}
  const lastStatuses=useRef('');
  useEffect(()=>{let alive=true;let timer:ReturnType<typeof setTimeout>;async function poll(){try{const r=await fetch(`/api/workspaces/${tid}/documents`);if(!r.ok)throw Error('처리 상태를 불러오지 못했어요.');const js:Job[]=await r.json();if(alive){setJobs(js);const signature=js.map(j=>j.id+j.status).join();if(lastStatuses.current&&signature!==lastStatuses.current)await refresh();lastStatuses.current=signature;}}catch(e){if(alive)setError((e as Error).message);}if(alive)timer=setTimeout(poll,7000);}poll();return()=>{alive=false;clearTimeout(timer);};},[tid,refresh]);
  async function upload(e:React.FormEvent){e.preventDefault();if(!file){setError('사진이나 파일을 먼저 넣어 주세요.');return;}if(file.size>4*1024*1024){setError('파일은 4MB 이하로 올려 주세요.');return;}setBusy(true);setError('');try{if(!uploadKey.current)uploadKey.current=crypto.randomUUID();const r=await fetch(`/api/workspaces/${tid}/documents?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type,'Idempotency-Key':uploadKey.current},body:file});if(!r.ok)throw Error('파일을 올리지 못했어요. PNG·JPEG·PDF 형식과 크기를 확인해 주세요.');const job=await r.json();setJobs(prev=>[job,...prev.filter(j=>j.id!==job.id)]);setNotice('읽기를 시작했어요. 다른 화면으로 가도 계속 정리해요.');await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
@@ -94,7 +118,8 @@ function Upload({data,tid,canUpload,canReview,request,refresh,go}:{data:Overview
  return <><h1>올리기</h1><p className="muted">손글씨 사진이든 파일이든 그대로 올려 주세요. 무슨 기록인지 고르지 않아도 돼요.</p>
  <div className="tabs" role="tablist">{[['file','사진·파일'],['manual','직접 적기'],['papers',`올린 종이 ${data.sources.length}`]].map(([k,l])=><button role="tab" aria-selected={tab===k} key={k} onClick={()=>{setTab(k);setError('');setNotice('');}}>{l}</button>)}</div>
  {error&&<p className="error" role="alert">{error}</p>}{notice&&<p className="success" role="status">{notice}</p>}
- {tab==='file'&&<>{canUpload?<form onSubmit={upload}><label className="upload-label" htmlFor="document-file">사진이나 파일을 여기로 끌어 놓으세요</label><div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();setFile(e.dataTransfer.files[0]||null);uploadKey.current='';}}><div><Icon name="upload"/><span>{file?file.name:'PNG·JPEG·PDF'}</span><small>파일당 4MB · PDF 30쪽까지</small></div><label className="button">파일 고르기<input id="document-file" aria-label="문서 파일" type="file" accept="image/png,image/jpeg,application/pdf" onChange={e=>{setFile(e.target.files?.[0]||null);uploadKey.current='';}}/></label></div><p className="muted">AI가 원본을 읽고 기록을 자동으로 반영해요. 애매한 값은 확인 화면에서 물어요. 종이에 적힌 다른 사람의 정보는 올리는 분이 처리할 권한이 있어야 해요.</p><button className="primary" disabled={busy}>{busy?'올리는 중…':'읽기 시작'}</button></form>:<p className="info">보는 사람은 종이를 올리거나 적지 않아요. 기존 문서와 기록은 볼 수 있어요.</p>}
+ {tab==='file'&&<>{canUpload?<><form onSubmit={upload} className="phone-capture"><h2>쓰던 종이를 그대로 찍어 주세요</h2><div className="photo-slot">{preview?<img src={preview} alt="찍은 사진"/>:file?<b>{file.name}</b>:<><b>사진 자리</b><small>종이가 화면에 다 들어오게</small></>}</div><p className="muted">종이에 적힌 다른 사람의 정보는 올리는 분이 처리할 권한이 있어야 해요.</p><div className="capture-actions"><label className="button">앨범에서<input type="file" accept="image/*,application/pdf" onChange={e=>pick(e.target.files?.[0]||null)}/></label><label className="shutter">찍기<input type="file" accept="image/*" capture="environment" onChange={e=>pick(e.target.files?.[0]||null)}/></label><button className="primary" disabled={busy||!file}>{busy?'올리는 중…':'읽기 시작'}</button></div></form>
+ <form onSubmit={upload} className="desk-upload"><label className="upload-label" htmlFor="document-file">사진이나 파일을 여기로 끌어 놓으세요</label><div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();pick(e.dataTransfer.files[0]||null);}}><div><Icon name="upload"/><span>{file?file.name:'PNG·JPEG·PDF'}</span><small>파일당 4MB · PDF 30쪽까지</small></div><label className="button">파일 고르기<input id="document-file" aria-label="문서 파일" type="file" accept="image/png,image/jpeg,application/pdf" onChange={e=>pick(e.target.files?.[0]||null)}/></label></div><p className="muted">AI가 원본을 읽고 기록을 자동으로 반영해요. 애매한 값은 확인 화면에서 물어요. 종이에 적힌 다른 사람의 정보는 올리는 분이 처리할 권한이 있어야 해요.</p><button className="primary" disabled={busy}>{busy?'올리는 중…':'읽기 시작'}</button></form></>:<p className="info">보는 사람은 종이를 올리거나 적지 않아요. 기존 문서와 기록은 볼 수 있어요.</p>}
  {active.map(j=><div className="panel job" key={j.id}><b>{data.sources.find(s=>s.id===j.source_input_id)?.name||'올린 종이'}</b><span className="chip wait">{j.reread_revision&&j.status==='succeeded'?'재읽기 완료 · 확인 필요':jobLabels[j.status]}</span><p className="muted">{j.status==='succeeded'?(j.reread_revision?'새로 읽은 내용을 확인 화면에서 확인해 주세요.':'기록에 반영했어요. 애매한 칸은 확인 화면에서 볼 수 있어요.'):j.status==='queued'?'차례가 되면 자동으로 읽어요.':j.status==='failed'?'원본은 보관되어 있어요. 파일을 확인한 뒤 다시 올려 주세요.':'다른 화면으로 가도 계속 정리해요.'}</p>{j.status==='succeeded'&&<button onClick={()=>go(j.reread_revision?'review':'records')}>{j.reread_revision?'새 확인 카드 보기':'기록 보기'}</button>}{j.status==='awaiting_review'&&<button onClick={()=>go('review')}>확인으로</button>}</div>)}</>}
  {tab==='manual'&&(canUpload?(type?<form className="manual-form" onSubmit={manual} onChange={()=>{if(notice)setNotice('');}}><label>기록 종류<select value={type} onChange={e=>{setType(e.target.value);manualKey.current='';}}>{data.types.map(t=><option key={t.name}>{t.name}</option>)}</select></label><label>날짜<input required type="date" name="date" defaultValue={new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Seoul'})}/></label><div className="manual-fields">{data.properties.filter(p=>p.type_name===type&&p.name!=='날짜').map(p=><label key={p.id}>{p.name}{p.unit?` (${p.unit})`:''}<input name={`field-${p.id}`} type={p.dtype==='date'?'date':'text'} inputMode={p.dtype==='number'?'decimal':undefined} maxLength={10000} placeholder={p.dtype==='number'?'숫자 · 미기재는 -':''}/></label>)}</div><button className="primary" disabled={busy}>{busy?'저장 중…':'저장'}</button></form>:<p className="info">종이를 한 장 읽으면 여기서 같은 칸으로 바로 적을 수 있어요.</p>):<p className="info">직접 입력할 권한이 없어요.</p>)}
  {tab==='papers'&&<><div className="toolbar"><p className="muted">AI가 정리한 기록 종류별로 묶었어요.</p><div className="segments">{['기록 종류별','올린 날 순'].map(g=><button key={g} aria-pressed={group===g} onClick={()=>setGroup(g)}>{g}</button>)}</div></div>{groups.map(([title,sources],i)=><details className="paper-group" key={title} open={i===0}><summary><b>{title}</b> <span>종이 {sources.length}장 · 기록 {sources.reduce((a,s)=>a+s.rows,0)}줄</span></summary>{sources.map(s=><div className="paper-row" key={s.id}><div className="thumb">{s.has_original?<img loading="lazy" src={`/api/workspaces/${tid}/business/sources/${s.id}/original?page=1`} alt="올린 원본"/>:s.channel==='직접 입력'?'직접 입력':'원본 없음'}</div><div className="paper-name"><b>{s.name||'이름 없음'}</b><small>{s.channel} · {s.types.join(', ')}</small></div><span>{s.created_at.slice(0,10)}</span><span className={`chip ${s.wait?'wait':'done'}`}>{s.wait?`확인 중 ${s.wait}개`:`기록 ${s.rows}줄`}</span><button onClick={()=>open(s)}>보기</button></div>)}</details>)}{!data.sources.length&&<p className="empty">아직 올린 종이가 없어요.</p>}{sourceError&&<p role="alert" className="error">{sourceError}</p>}{source&&<div className="panel"><div className="toolbar"><h2>{source.name}</h2><button onClick={()=>setSource(null)}>닫기</button></div>{canReview&&source.has_original&&<Reread sid={source.id} request={request} onStarted={()=>go('review')}/>}<Evidence detail={source} tid={tid}/></div>}</>}
