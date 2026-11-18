@@ -170,4 +170,6 @@ button.danger{background:#b91c1c;border-color:#b91c1c;color:#fff}button.danger:h
  .tabbar .count{margin-left:2px;padding:0 6px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;line-height:18px}
  .desk-upload{display:none}
  .phone-capture{display:block}.phone-capture h2{font-size:21px;margin:14px 0 0}
+ .photo-slot{height:min(40vh,340px)}
+ .capture-actions{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));z-index:5;margin:8px -16px 0;padding:10px 16px;background:#fff;border-top:1px solid var(--line)}
 }
