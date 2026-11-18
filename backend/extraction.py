@@ -101,6 +101,13 @@ def make_payload(sheet, found, uploaded=None):
     # 쪽마다 AI 의 세로 좌표가 실제보다 늘거나 밀린 정도를 한 번 재어 모든 대략의 상자를 바로잡는다
     fits = {p: ocr.calibrate([(str(c.get('source_raw') or ''),box(c),c['label']) for c in every_cell if str(c.get('page',1))==p], lines)
             for p,lines in found.items()}
+    # 표의 칸 상자는 OCR 격자(가로줄 · 열)로 잡는다. 격자를 못 잡은 쪽만 AI 좌표를 보정해 쓴다
+    gridded = {}
+    for p, lines in found.items():
+        rows_p = [cs for cs in ([c for c in r['cells'] if str(c.get('page',1))==p] for r in sheet['rows']) if cs]
+        boxes = ocr.grid([[(str(c.get('source_raw') or ''),box(c),c['label']) for c in cs] for cs in rows_p], lines)
+        for cs, bs in zip(rows_p, boxes or []):
+            gridded.update({id(c): b for c, b in zip(cs, bs) if b})
     records, spans, used = [], {}, {}
     for index, row in enumerate(sheet['rows']):
         cells = [*sheet.get('doc_fields',[]), *row['cells']]
@@ -118,7 +125,7 @@ def make_payload(sheet, found, uploaded=None):
             keep = [n for n,line in enumerate(every) if ocr._norm(line['text']) not in labels]  # '상 호'도 칸 이름 '상호'다
             took = set()
             fit = fits.get(str(page))
-            placed = ocr.place_all([(str(c.get('source_raw') or ''),ocr.stretch(box(c),fit),c['label']) for c in group],[every[n] for n in keep],took)
+            placed = ocr.place_all([(str(c.get('source_raw') or ''),gridded.get(id(c)) or ocr.stretch(box(c),fit),c['label']) for c in group],[every[n] for n in keep],took)
             used.setdefault(str(page),set()).update(keep[n] for n in took)
             for n,c in enumerate(group):
                 spans.setdefault(c['label'],[]).append({'rec':index,'page':page,'quote':c.get('source_raw'),

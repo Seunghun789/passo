@@ -293,11 +293,113 @@ def stretch(box, fit):
     return [box[0], y0, box[2], y1] if y0 < y1 else box
 
 
-def bands(found):
-    """판독한 글줄(글자가 있고 확신 0.5 이상)을 가로줄로 묶는다. 세로 범위가 작은 쪽 높이의 절반 넘게 겹치면 같은 가로줄.
+def grid(rows, found):
+    """표의 칸 상자를 AI 좌표 대신 OCR 격자로 잡는다. rows: 위→아래 순서의 줄마다 [(값, AI 상자 또는 None, 칸 이름)].
+    줄: AI가 읽은 줄과 OCR 가로줄을 위→아래로 하나씩 차례로 짝짓고, 글이 닮은 짝이 그 차례를 당긴다(건너뛰면 감점). 짝이 없는 줄은
+    앞뒤 짝 사이의 빈 가로줄에 차례로 놓고, 모자라면 그 사이를 고르게 나눈다.
+    열: 글이 확실히 같은 짝(그 가로줄에서 값과 0.8 넘게 닮은 글줄이 하나뿐)들의 가로 자리로 잰다. 잰 열이 둘 넘으면
+    재지 못한 열은 AI 가로 좌표를 잰 열에 맞춰 옮기고, 아니면 AI 좌표를 쓴다.
+    돌려줌: rows 와 같은 모양의 상자 목록. 짝지은 줄이 하나도 없으면 None."""
+    bs = bands(found, 0.2)  # 줄 자리를 잡을 때는 흐린 글줄도 쓴다
+    if not bs or not rows:
+        return None
+    weight = lambda v: 0 if not _norm(v) else (1.0 if len(_norm(v)) > 2 else 0.3)  # 한두 글자 값은 어디에나 들어맞는다
+    def like(v, text):  # 긴 값은 한두 글자 글줄('3' · 'L')과 짝짓지 않는다. 그런 글줄은 어느 값에나 들어 있다
+        return 0.0 if len(_norm(v)) > 2 and len(_norm(text)) <= 2 else _sim(v, text)
+    score = [[sum(weight(v) * max((like(v, found[i]["text"]) for i in idx), default=0) for v, _, _ in r) for idx, _ in bs]
+             for r in rows]
+    R, B = len(rows), len(bs)
+    skip_row, skip_band = 0.3, 0.2  # 줄 · 가로줄을 건너뛰는 감점. 멀리 있는 그럴듯한 짝보다 차례대로 하나씩 짝짓는 쪽을 고른다
+    NEG = float("-inf")
+    f = [[0.0] * (B + 1)] + [[-skip_row * i] + [NEG] * B for i in range(1, R + 1)]  # 맨 위 머리글 가로줄은 감점 없이 건너뛴다
+    for i in range(1, R + 1):
+        for j in range(1, B + 1):
+            take = f[i - 1][j - 1] + score[i - 1][j - 1]  # 글이 닮지 않아도 차례대로 하나씩 놓는 것이 기본, 닮은 글이 당긴다
+            f[i][j] = max(f[i - 1][j] - skip_row, f[i][j - 1] - skip_band, take)
+    j = max(range(B + 1), key=lambda k: f[R][k])  # 맨 아래 남은 가로줄도 감점 없이 둔다
+    at, i = [None] * R, R
+    while i and j:
+        if f[i][j] == f[i - 1][j - 1] + score[i - 1][j - 1]:
+            at[i - 1] = j - 1; i -= 1; j -= 1
+        elif f[i][j] == f[i - 1][j] - skip_row:
+            i -= 1
+        else:
+            j -= 1
+    anchors = [n for n in range(R) if at[n] is not None]
+    if not anchors:
+        return None
+    height = sorted(b[3] - b[1] for _, b in bs)[B // 2]
+    ys = [None] * R
+    for n in anchors:
+        ys[n] = bs[at[n]][1][1], bs[at[n]][1][3]
+    edges = [(-1, -1)] + [(n, at[n]) for n in anchors] + [(R, B)]
+    for (n0, j0), (n1, j1) in zip(edges, edges[1:]):
+        gap = list(range(n0 + 1, n1))
+        if not gap:
+            continue
+        free = list(range(j0 + 1, j1))
+        if n0 < 0:
+            free = free[-len(gap):]  # 첫 짝 위의 줄은 바로 위 가로줄부터
+        if len(free) >= len(gap):
+            for n, j in zip(gap, free):
+                ys[n] = bs[j][1][1], bs[j][1][3]
+        else:  # 빈 가로줄이 모자라면 앞뒤 짝의 가운데 사이를 고르게 나누고 높이는 보통 줄 높이
+            c0 = (ys[n0][0] + ys[n0][1]) / 2 if n0 >= 0 else (ys[n1][0] + ys[n1][1]) / 2 - height * (len(gap) + 1)
+            c1 = (ys[n1][0] + ys[n1][1]) / 2 if n1 < R else c0 + height * (len(gap) + 1)
+            step = (c1 - c0) / (len(gap) + 1)
+            for k, n in enumerate(gap, 1):
+                c = c0 + k * step
+                ys[n] = max(0, round(c - height / 2)), min(1000, round(c + height / 2))
+    xs = {}
+    for r, j in zip(rows, at):
+        if j is None:
+            continue
+        for v, _, label in r:
+            if len(_norm(v)) <= 2:
+                continue
+            hits = [i for i in bs[j][0] if len(_norm(found[i]["text"])) > 2 and _sim(v, found[i]["text"]) >= 0.8]
+            if len(hits) == 1 and found[hits[0]]["box"][2] - found[hits[0]]["box"][0] <= 300:  # 여러 열에 걸친 글줄은 빼고
+                xs.setdefault(label, []).append(found[hits[0]]["box"])
+    mid = lambda v: sorted(v)[len(v) // 2]
+    cols = {label: [mid([b[0] for b in v]), mid([b[2] for b in v])] for label, v in xs.items()}
+    ai = {}
+    for r in rows:
+        for _, rough, label in r:
+            if rough:
+                ai.setdefault(label, []).append(rough)
+    ai = {label: [mid([b[0] for b in v]), mid([b[2] for b in v])] for label, v in ai.items()}
+    pts = [((ai[l][0] + ai[l][1]) / 2, (cols[l][0] + cols[l][1]) / 2) for l in cols if l in ai]
+    fit = None
+    if len(pts) >= 2:
+        from itertools import combinations
+        slopes = sorted((y2 - y1) / (x2 - x1) for (x1, y1), (x2, y2) in combinations(pts, 2) if abs(x2 - x1) > 20)
+        if slopes and 0.2 <= slopes[len(slopes) // 2] <= 5:
+            a = slopes[len(slopes) // 2]
+            fit = a, mid([y - a * x for x, y in pts])
+    def column(label, rough):
+        if label in cols:
+            return cols[label]
+        if label in ai and fit:
+            a, b = fit
+            half = (ai[label][1] - ai[label][0]) * a / 2
+            c = a * (ai[label][0] + ai[label][1]) / 2 + b
+            return [max(0, round(c - half)), min(1000, round(c + half))]
+        return [rough[0], rough[2]] if rough else None
+    out = []
+    for r, y in zip(rows, ys):
+        line_ = []
+        for _, rough, label in r:
+            x = column(label, rough)
+            line_.append([x[0], y[0], x[1], y[1]] if x and y and x[0] < x[1] and y[0] < y[1] else rough)
+        out.append(line_)
+    return out
+
+
+def bands(found, least=0.5):
+    """판독한 글줄(글자가 있고 확신 least 이상)을 가로줄로 묶는다. 세로 범위가 작은 쪽 높이의 절반 넘게 겹치면 같은 가로줄.
     [(글줄 번호들, 감싸는 상자)]를 위에서 아래 순서로 돌려준다."""
     out = []
-    keep = [i for i, l in enumerate(found) if l.get("conf", 0) >= 0.5 and _norm(l["text"])]
+    keep = [i for i, l in enumerate(found) if l.get("conf", 0) >= least and _norm(l["text"])]
     for i in sorted(keep, key=lambda i: found[i]["box"][1]):
         b = found[i]["box"]
         for idx, box in out:
