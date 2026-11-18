@@ -141,6 +141,7 @@ def install_routes(app, session, gateway):
             s['rows'] = len(own)
             cov = s.pop('coverage', None)  # 목록에는 읽지 않은 곳 수만. 자리는 원본 보기(sources/{sid})에서 준다
             s['unread'] = cov.get('unread') if cov else None
+            s['notes'] = cov.get('notes') if cov else None  # 읽을 때 참고한 고친 답 · 확정 이름 수
             s['types'] = list(dict.fromkeys(r['type_name'] for r in own))
             s['wait'] = sum(p['source_input_id']==s['id'] for p in checks)
             s['has_original'] = bool(s.pop('storage_path',None))
@@ -194,6 +195,18 @@ def install_routes(app, session, gateway):
     async def manual(tid: int, body: ManualRecord, token=Depends(session), g=Depends(gateway)):
         await g.authorize(token,tid,'upload')
         return await g.rpc(token,'passo_write_record',{'tid':tid,**body.model_dump(mode='json')})
+
+    @app.get('/v1/workspaces/{tid}/notes')
+    async def notes(tid: int, token=Depends(session), g=Depends(gateway)):
+        """읽기에 참고하는 답: 이 워크스페이스에서 고친 글씨와 알려 준 뜻(지운 것은 빼고, 최근 것부터)."""
+        await g.authorize(token, tid)
+        found = await rows(g, token, tid, 'reading_notes', 'id,kind,label,written,value,created_at', removed_at='is.null')
+        return sorted(found, key=lambda n: n['created_at'], reverse=True)
+
+    @app.post('/v1/workspaces/{tid}/notes/{nid}/remove')
+    async def remove_note(tid: int, nid: int, token=Depends(session), g=Depends(gateway)):
+        await g.authorize(token, tid, 'review')
+        return await g.rpc(token, 'passo_reading_note_remove', {'tid': tid, 'nid': nid})
 
     @app.get('/v1/workspaces/{tid}/sources/{sid}')
     async def source(tid: int,sid: int,token=Depends(session),g=Depends(gateway)):

@@ -57,6 +57,10 @@ try {
  await db.exec(await readFile('db/migrations/020_member_remove.sql','utf8'));
  await db.exec(await readFile('db/migrations/021_tenant_versions.sql','utf8'));
  await db.exec(await readFile('db/migrations/022_account_deletion.sql','utf8'));
+ await db.exec(await readFile('db/migrations/024_assumed_date.sql','utf8'));
+ await db.exec(await readFile('db/migrations/025_read_coverage.sql','utf8'));
+ await db.exec(await readFile('db/migrations/026_job_step.sql','utf8'));
+ await db.exec(await readFile('db/migrations/027_reading_notes.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);
@@ -82,6 +86,13 @@ try {
  check('org owner inherits only its own workspaces',(await as(1,'select * from public.passo_workspaces()')).map(x=>x.id).join()==='1,3');
  check('legacy master flag grants no access',(await as(4,'select * from public.records')).length===0);
  check('A cannot read B jobs',(await as(1,'select id from public.passo_jobs')).map(x=>x.id).join()===uid(201));
+ await db.exec(`insert into public.reading_notes(tenant_id,kind,label,written,value) values(1,'고친 글씨','품명','컨(F)710','컨(고)40'),(2,'고친 글씨','품명','x','y')`);
+ check('A sees only A reading notes',(await as(1,'select tenant_id from public.reading_notes')).map(x=>x.tenant_id).join()==='1');
+ await denied('viewer cannot remove a reading note',()=>as(3,'select public.passo_reading_note_remove(1,1)'));
+ await denied('A cannot remove B reading note',()=>as(1,'select public.passo_reading_note_remove(2,2)'));
+ check('owner removes a reading note',(await as(1,'select public.passo_reading_note_remove(1,1) ok'))[0].ok===true);
+ check('removed note is kept with removed_at',(await as(1,'select removed_at from public.reading_notes where id=1'))[0].removed_at!==null);
+ await denied('authenticated cannot write reading notes directly',()=>as(1,"insert into public.reading_notes(tenant_id,kind,label) values(1,'고친 글씨','x')"));
  for (const table of ['users','org_members','memberships','invites','auth_identity_links','ai_logs','chat_sessions','eval_votes','passo_checkpoints']) {
   await denied(`authenticated cannot read private ${table}`,()=>as(1,`select * from public.${table}`));
  }

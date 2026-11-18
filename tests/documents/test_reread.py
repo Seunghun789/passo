@@ -79,13 +79,13 @@ def test_worker_uses_selected_model_and_legacy_original(monkeypatch):
     calls = []
     monkeypatch.setattr(documents, 'validate_document', lambda *args:None)
     monkeypatch.setattr(extraction, 'run_ocr', lambda *args:{'1':[]})
-    def model(content, mime, selected):
+    def model(content, mime, selected, hint=''):
         assert (content, mime, selected) == (b'original', 'image/png', 'claude-opus-5-5')
         calls.append('model')
         return {'sheet':{}}
     monkeypatch.setattr(extraction, 'run_model', model)
     monkeypatch.setattr(extraction, 'make_payload', lambda *args:{'records':[{}]})
-    monkeypatch.setattr(extraction, 'run_fill', lambda content, mime, sheet, *args:{'sheet':sheet, 'usage':[]})
+    monkeypatch.setattr(extraction, 'run_fill', lambda content, mime, sheet, *args, **kw:{'sheet':sheet, 'usage':[]})
     def structure(fetch, tid, sheet, records, selected):
         assert (tid, selected) == (7, 'claude-opus-5-5')
         calls.append('structure')

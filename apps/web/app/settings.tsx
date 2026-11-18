@@ -33,6 +33,7 @@ export default function Settings({request}:{request:Request}){
     <label>대표 제품 · 서비스<input name="product" maxLength={200} defaultValue={i.product||''} disabled={!i.org_owner}/></label>
     <label>웹사이트<input name="website" maxLength={300} defaultValue={i.website||''} disabled={!i.org_owner}/></label>
     {owner&&<div className="form-actions"><button className="primary" disabled={busy}>변경사항 저장하기</button></div>}</form></section>
+  <ReadingNotes request={request} canRemove={['주인','확인하는 사람'].includes(i.role)}/>
   <section className="panel settings-block"><h2>권한 관리</h2><div className="table-wrap"><table className="plain-table"><thead><tr><th>역할</th><th>할 수 있는 일</th></tr></thead>
    <tbody>{data.roles.map(r=><tr key={r.role}><td><b>{r.role}</b></td><td>{r.can.join(' · ')}</td></tr>)}</tbody></table></div></section>
   <section className="panel settings-block"><div className="toolbar"><h2>구성원 관리</h2>{owner&&<button className="primary" onClick={()=>{setInviting(!inviting);setLink('');}}>구성원 초대하기</button>}</div>
@@ -49,4 +50,24 @@ export default function Settings({request}:{request:Request}){
     <tbody>{data.invites.map(v=><tr key={v.token}><td>{v.role}</td><td>{day(v.created_at)}</td><td>{day(v.expires_at)}</td>
      <td>{v.used_by?`${v.used_by} 참여`:new Date(v.expires_at)<new Date()?'기간 지남':<button className="text-button" onClick={()=>{const l=`${location.origin}/invite/${v.token}`;navigator.clipboard?.writeText(l).then(()=>setNotice('링크를 복사했어요.'));}}>링크 복사</button>}</td></tr>)}</tbody></table></div>}
   </section></>;
+}
+
+type Note={id:number,kind:string,label:string,written:string,value:string,created_at:string};
+function ReadingNotes({request,canRemove}:{request:Request,canRemove:boolean}){
+ // 읽기에 참고하는 답: 확인 카드에서 고친 글씨와 "뜻 확인"으로 알려 준 뜻. 다음 사진을 읽을 때 AI에게 함께 간다.
+ const [notes,setNotes]=useState<Note[]|null>(null),[all,setAll]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const load=useCallback(()=>request('notes').then(setNotes).catch(()=>setNotes([])),[request]);
+ useEffect(()=>{load();},[load]);
+ async function remove(n:Note){setBusy(true);setError('');try{await request(`notes/${n.id}/remove`,{method:'POST',body:'{}'});await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ if(!notes)return null;
+ const meant=notes.filter(n=>n.kind==='뜻 풀이'),fixed=notes.filter(n=>n.kind==='고친 글씨'),shown=all?fixed:fixed.slice(0,10);
+ const row=(n:Note,a:string,b:string)=><tr key={n.id}><td>{n.label}</td><td>{a}</td><td>{b}</td><td>{day(n.created_at)}</td>{canRemove&&<td><button className="text-button" disabled={busy} onClick={()=>remove(n)}>지우기</button></td>}</tr>;
+ return <section className="panel settings-block"><h2>읽기에 참고하는 답 {notes.length}개</h2>
+  <p className="muted">확인 카드에서 고친 글씨와 알려 주신 뜻이에요. 다음 사진을 읽을 때 AI에게 함께 보내요. 틀린 것은 [지우기]로 빼면 다음 읽기부터 쓰지 않아요.</p>
+  {error&&<p className="error" role="alert">{error}</p>}
+  {!notes.length&&<p className="muted">아직 없어요. 확인 카드에서 값을 고치면 여기에 쌓여요.</p>}
+  {!!meant.length&&<div className="table-wrap"><table className="plain-table notes-table"><thead><tr><th>칸</th><th>적힌 표기</th><th>뜻</th><th>알려 준 날</th>{canRemove&&<th></th>}</tr></thead><tbody>{meant.map(n=>row(n,n.written,n.value))}</tbody></table></div>}
+  {!!fixed.length&&<div className="table-wrap"><table className="plain-table notes-table"><thead><tr><th>칸</th><th>AI가 읽은 것</th><th>고친 값</th><th>고친 날</th>{canRemove&&<th></th>}</tr></thead><tbody>{shown.map(n=>row(n,n.written||'판독 불가',n.value||'(빈칸)'))}</tbody></table></div>}
+  {fixed.length>10&&!all&&<button className="text-button" onClick={()=>setAll(true)}>모두 보기</button>}
+ </section>;
 }

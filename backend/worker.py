@@ -28,7 +28,7 @@ class Worker:
         return self.request('POST','/rest/v1/rpc/'+name,json=body or {}).json()
 
     def process(self, job):
-        from backend.extraction import run_ocr, run_model, run_fill, run_tables, run_structure, run_entities, make_payload
+        from backend.extraction import run_ocr, run_model, run_fill, run_tables, run_structure, run_entities, make_payload, reading_notes
         stop, lost = threading.Event(), threading.Event()
         args = {'jid':job['id'],'fence':job['lease_token']}
         def heartbeat():
@@ -56,14 +56,17 @@ class Worker:
             state = rows[0]['state'] if rows else {}
             if 'ocr' not in state:
                 state['ocr'] = run_ocr(content,job['media_type']);save(state)
+            fetch = lambda table,params: self.request('GET','/rest/v1/'+table,params=params).json()
+            notes = reading_notes(fetch,job['tenant_id'])  # 이 워크스페이스에서 사람이 고친 글씨 · 알려 준 뜻 · 확정한 이름
             if 'extraction' not in state:
-                state['extraction'] = run_model(content,job['media_type'],job.get('model_id'));save(state)
+                state['extraction'] = run_model(content,job['media_type'],job.get('model_id'),notes['hint'])
+                state['extraction']['notes'] = {'answers':notes['answers'],'names':notes['names']};save(state)
             uploaded = job.get('created_at') and datetime.fromisoformat(job['created_at']).astimezone(ZoneInfo('Asia/Seoul')).date().isoformat()
             if 'fill' not in state:  # 하네스: 아래쪽에 읽지 않은 줄이 남았으면 그 부분만 잘라 이어 읽는다
-                state['fill'] = run_fill(content,job['media_type'],state['extraction']['sheet'],state['ocr'],uploaded,job.get('model_id'));save(state)
+                state['fill'] = run_fill(content,job['media_type'],state['extraction']['sheet'],state['ocr'],uploaded,job.get('model_id'),hint=notes['hint']);save(state)
             sheet = state['fill']['sheet']
-            payload = make_payload(sheet,state['ocr'],uploaded,run_tables(content,job['media_type']))  # 표 선은 체크포인트에 두지 않고 매번 찾는다(1초 안)
-            fetch = lambda table,params: self.request('GET','/rest/v1/'+table,params=params).json()
+            payload = make_payload(sheet,state['ocr'],uploaded,run_tables(content,job['media_type']),notes['names_list'])  # 표 선은 체크포인트에 두지 않고 매번 찾는다(1초 안)
+            payload.setdefault('coverage',{})['notes'] = state['extraction'].get('notes')  # 참고한 고친 답 · 확정 이름 수
             if 'structure' not in state:
                 state['structure'] = run_structure(fetch,job['tenant_id'],sheet,
                                                    payload['records'],job.get('model_id'));save(state)

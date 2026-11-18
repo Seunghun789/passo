@@ -115,3 +115,33 @@ def test_box_outside_its_column_is_pulled_back():
     spans = {'수량': [{'box': [270, 44 + n * 28, 330, 72 + n * 28]} for n in range(5)] + [{'box': [517, 958, 637, 985]}]}
     keep_in_columns(spans, ['수량'])
     assert spans['수량'][-1]['box'] == [270, 958, 330, 985] and spans['수량'][0]['box'] == [270, 44, 330, 72]
+
+
+def test_reading_notes_build_hint_from_this_workspace_only():
+    from backend.extraction import reading_notes
+    seen = []
+    def fetch(table, params):
+        seen.append((table, params['tenant_id']))
+        if table == 'reading_notes':
+            return [{'kind': '고친 글씨', 'label': '품명', 'written': '컨(F)710', 'value': '컨(고)40'},
+                    {'kind': '뜻 풀이', 'label': '품명', 'written': '현수', 'value': '현수막'}]
+        return [{'name': '파트라인'}, {'name': '일안'}]
+    n = reading_notes(fetch, 7)
+    assert n['answers'] == 2 and n['names'] == 2 and all(t == 'eq.7' for _, t in seen)
+    assert '컨(F)710 → 컨(고)40' in n['hint'] and '현수 = 현수막' in n['hint'] and '파트라인' in n['hint']
+
+
+def test_reading_notes_missing_table_reads_without_notes():
+    from backend.extraction import reading_notes
+    def fetch(table, params):
+        raise RuntimeError('worker_gateway_404')
+    assert reading_notes(fetch, 7) == {'hint': '', 'answers': 0, 'names': 0, 'names_list': []}
+
+
+def test_close_name_becomes_candidate():
+    from backend.extraction import known_name
+    assert known_name('파트라인1', ['파트라인', '한샘']) == '파트라인'
+    assert known_name('파트라인', ['파트라인']) is None and known_name('130', ['130']) is None and known_name('나이스', ['파트라인']) is None
+    s = sheet(['파트라인1'])
+    p = make_payload(s, {'1': []}, names=['파트라인'])
+    assert p['spans']['품명'][0]['known'] == '파트라인' and p['spans']['품명'][0]['cand'][0] == '파트라인'

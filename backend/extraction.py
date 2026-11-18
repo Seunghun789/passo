@@ -66,7 +66,7 @@ def run_entities(fetch, tid, structure, records):
         return plan_entities(Reader(fetch,tid),structure,records,client)
 
 
-def run_model(content, mime, model=None):
+def run_model(content, mime, model=None, hint=''):
     from core.llm import extract
     selected = selected_model(model)
     usage = {}
@@ -74,7 +74,7 @@ def run_model(content, mime, model=None):
         usage.update(model=model,input_tokens=usage_in,output_tokens=usage_out,seconds=round(time.monotonic()-started,3))
     with ai_client() as client:
         sheet = extract(None,selected,'original.pdf' if mime=='application/pdf' else 'original.png',
-                        content,api_client=client,log_sink=sink)
+                        content,api_client=client,log_sink=sink,hint=hint)
     return {'sheet':sheet,'usage':usage}
 
 
@@ -96,10 +96,11 @@ def run_tables(content, mime):
     return out
 
 
-def make_payload(sheet, found, uploaded=None, tables=None):
+def make_payload(sheet, found, uploaded=None, tables=None, names=()):
     """uploaded: 올린 날(YYYY-MM-DD). 종이에서 날짜를 읽지 못하면 이 날을 기록 날짜로 넣고 date_assumed 로 알려
     "기록 날짜" 카드로 묻게 한다. 올린 날도 모르면 날짜를 지어내지 않고 실패한다.
-    tables: run_tables 결과(쪽 → 표 선 격자). 표 칸의 상자는 표 선 격자 칸을 먼저 쓰고, 못 찾은 칸만 OCR 격자 · 짝짓기 상자를 쓴다."""
+    tables: run_tables 결과(쪽 → 표 선 격자). 표 칸의 상자는 표 선 격자 칸을 먼저 쓰고, 못 찾은 칸만 OCR 격자 · 짝짓기 상자를 쓴다.
+    names: 이 워크스페이스에서 확정한 대상 이름. 읽은 값과 거의 같고 조금 다르면 그 이름을 후보 값(spans 의 cand · known)으로 붙인다."""
     from core import engine, ocr
     from core.record_cells import extracted_data, encode_record
     raw_date = sheet.get('occurred_at')
@@ -160,7 +161,9 @@ def make_payload(sheet, found, uploaded=None, tables=None):
             placed = ocr.place_all([(str(c.get('source_raw') or ''),gridded.get(id(c)) or ocr.stretch(box(c),fit),c['label']) for c in group],[every[n] for n in keep],took)
             used.setdefault(str(page),set()).update(keep[n] for n in took)
             for n,c in enumerate(group):
-                spans.setdefault(c['label'],[]).append({'rec':index,'page':page,'quote':c.get('source_raw'),
+                known = known_name(c.get('source_raw'), names)
+                cand = list(dict.fromkeys(x for x in [*([known] if known else []), *(c.get('candidates') or [])] if x))
+                spans.setdefault(c['label'],[]).append({'rec':index,'page':page,'quote':c.get('source_raw'),'cand':cand,'known':known,
                     'box':ruled.get(id(c)) or (placed[n] if n < len(placed) else box(c)),'model_box':box(c),'location':'estimated',
                     'unsure':c.get('uncertain',False),'unreadable':c.get('unreadable',False)})
     keep_in_columns(spans, sheet.get('columns', []))
@@ -171,6 +174,51 @@ def make_payload(sheet, found, uploaded=None, tables=None):
     if assumed:
         result['date_assumed'] = assumed
     return result
+
+
+def reading_notes(fetch, tid, limit=40):
+    """이 워크스페이스의 "읽기에 참고하는 답"(고친 글씨 · 뜻 풀이)과 확정한 대상 이름을 읽기 지시에 덧붙일 글로 만든다.
+    다른 워크스페이스 것은 쓰지 않는다. 표가 없거나 읽지 못하면 노트 없이 읽는다."""
+    def get(table, params):
+        try:
+            return fetch(table, params)
+        except Exception:
+            return []
+    notes = get('reading_notes', {'tenant_id':f'eq.{tid}','removed_at':'is.null','select':'kind,label,written,value',
+                                  'order':'created_at.desc','limit':str(limit)})
+    names = list(dict.fromkeys(r['name'] for r in get('entities', {'tenant_id':f'eq.{tid}','select':'name','order':'id.desc','limit':'300'}) if r.get('name')))
+    fixed = [n for n in notes if n['kind'] == '고친 글씨']
+    meant = [n for n in notes if n['kind'] == '뜻 풀이']
+    lines = []
+    if fixed:
+        lines.append('고친 글씨(칸: AI가 읽은 것 → 바른 값): ' + '; '.join(f"{n['label']}: {n['written'] or '(판독 불가)'} → {n['value'] or '(빈칸)'}" for n in fixed))
+    if meant:
+        lines.append('뜻 풀이(칸: 적힌 표기 = 뜻): ' + '; '.join(f"{n['label']}: {n['written']} = {n['value']}" for n in meant))
+    if names:
+        lines.append('확정한 이름: ' + ', '.join(names[:150]))
+    hint = ('\n- 아래는 이 워크스페이스에서 사람이 확인한 것이에요. 같은 사람이 적은 종이라 비슷하게 생긴 글씨는 참고해서 읽되, '
+            '적힌 것과 다르면 적힌 그대로 읽으세요.\n  ' + '\n  '.join(lines)) if lines else ''
+    return {'hint': hint, 'answers': len(notes), 'names': len(names), 'names_list': names}
+
+
+def known_name(value, names, least=0.75):
+    """읽은 값이 확정한 이름과 거의 같고(글자 닮음 least 이상) 조금 다르면 그 이름. 같거나 숫자뿐이거나 멀면 None."""
+    from difflib import SequenceMatcher
+    from core.ocr import _norm
+    v = _norm(value or '')
+    if len(v) < 2 or v.isdigit() or not names:
+        return None
+    best, score = None, 0.0
+    for n in names:
+        k = _norm(n)
+        if not k:
+            continue
+        if k == v:
+            return None
+        r = SequenceMatcher(None, v, k).ratio()
+        if r > score:
+            best, score = n, r
+    return best if score >= least else None
 
 
 def keep_in_columns(spans, columns, least=3):
@@ -226,7 +274,7 @@ def merge_rows(sheet, more, page, top, bottom):
     return len(rows)
 
 
-def run_fill(content, mime, sheet, found, uploaded=None, model=None, rounds=3):
+def run_fill(content, mime, sheet, found, uploaded=None, model=None, rounds=3, hint=''):
     """하네스: 원본 아래쪽에 읽지 않은 가로줄이 남으면 그 부분만 잘라 AI 에게 이어서 읽힌다(최대 rounds 번).
     더 읽히지 않거나 남은 곳이 줄지 않으면 멈춘다. {'sheet': 이어 붙인 표, 'usage': [AI 사용량]}"""
     import copy
@@ -238,7 +286,7 @@ def run_fill(content, mime, sheet, found, uploaded=None, model=None, rounds=3):
         if not gaps or gaps == last:
             break
         last, added = gaps, 0
-        hint = ("\n- 이 사진은 앞서 읽은 표의 아래쪽 부분만 잘라 낸 것이에요. 머리글이 보이지 않아도 같은 표예요. "
+        part_hint = hint + ("\n- 이 사진은 앞서 읽은 표의 아래쪽 부분만 잘라 낸 것이에요. 머리글이 보이지 않아도 같은 표예요. "
                 f"columns 의 label 은 {', '.join(sheet.get('columns',[]))} 를 같은 순서로 쓰고, 이 부분에 적힌 줄을 처음부터 끝까지 빠짐없이 모두 읽어 주세요.")
         with ai_client() as client:
             for page, (top, bottom) in gaps.items():
@@ -246,7 +294,7 @@ def run_fill(content, mime, sheet, found, uploaded=None, model=None, rounds=3):
                 def sink(t, model, prompt, answer, usage_in, usage_out, started):
                     one.update(model=model,input_tokens=usage_in,output_tokens=usage_out,seconds=round(time.monotonic()-started,3))
                 more = extract(None, selected, 'part.png', crop_rows(page_image(content, mime, int(page)), top, bottom),
-                               api_client=client, log_sink=sink, hint=hint)
+                               api_client=client, log_sink=sink, hint=part_hint)
                 usage.append(one)
                 added += merge_rows(sheet, more, page, top, bottom)
         if not added:

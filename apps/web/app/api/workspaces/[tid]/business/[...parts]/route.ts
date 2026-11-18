@@ -6,9 +6,9 @@ type Context={params:Promise<{tid:string,parts:string[]}>};
 async function forward(request:Request,context:Context) {
  const {tid,parts}=await context.params;
  const path=parts.join('/'),method=request.method,url=new URL(request.url);
- const allowed=method==='GET' ? /^(overview|settings|audit|ask|home|automations|dashboard|entities|graph|chats|chats\/[1-9]\d*|widgets\/[1-9]\d*\/calendar|records|reviews|reviews\/[1-9]\d*\/structure|sources\/[1-9]\d*(\/(original|review|policy|reread))?)$/.test(path)
+ const allowed=method==='GET' ? /^(overview|settings|notes|audit|ask|home|automations|dashboard|entities|graph|chats|chats\/[1-9]\d*|widgets\/[1-9]\d*\/calendar|records|reviews|reviews\/[1-9]\d*\/structure|sources\/[1-9]\d*(\/(original|review|policy|reread))?)$/.test(path)
   : method==='PATCH' ? /^records\/[1-9]\d*\/cells$/.test(path)
-  : method==='POST' && /^(opened|settings|invites|members\/[1-9]\d*(\/(remove|owner))?|ask|week-summary|edits|edits\/[1-9]\d*(\/undo)?|entities\/recommend|links|links\/recommend|links\/[1-9]\d*\/cut|automations|widgets|(automations|widgets)\/(recommend|[1-9]\d*)|widgets\/preview|rule-proposals\/[1-9]\d*|chats|chats\/[1-9]\d*|manual-records|audit\/[1-9]\d*\/undo|sources\/[1-9]\d*\/(reopen|policy|reread)|reviews\/[1-9]\d*(\/(structure|read))?)$/.test(path);
+  : method==='POST' && /^(opened|settings|invites|notes\/[1-9]\d*\/remove|members\/[1-9]\d*(\/(remove|owner))?|ask|week-summary|edits|edits\/[1-9]\d*(\/undo)?|entities\/recommend|links|links\/recommend|links\/[1-9]\d*\/cut|automations|widgets|(automations|widgets)\/(recommend|[1-9]\d*)|widgets\/preview|rule-proposals\/[1-9]\d*|chats|chats\/[1-9]\d*|manual-records|audit\/[1-9]\d*\/undo|sources\/[1-9]\d*\/(reopen|policy|reread)|reviews\/[1-9]\d*(\/(structure|read))?)$/.test(path);
  if(!/^[1-9]\d*$/.test(tid)||!allowed) return Response.json({detail:'없는 요청입니다.'},{status:404});
  if(method!=='GET'&&!sameOrigin(request)) return new Response(null,{status:403});
  let body:string|undefined;
