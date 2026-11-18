@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
 
 MAX_BYTES = 4 * 1024 * 1024
-PUBLIC_JOB = ('id', 'status', 'source_input_id', 'created_at', 'updated_at', 'attempts', 'error_code', 'model_id', 'reread_revision')
+PUBLIC_JOB = ('id', 'status', 'source_input_id', 'created_at', 'updated_at', 'attempts', 'error_code', 'model_id', 'reread_revision', 'step', 'read_rows')
 MODELS = ('claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5')
 
 
