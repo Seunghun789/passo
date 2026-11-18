@@ -57,6 +57,53 @@ def class_links(K):
     return out
 
 
+def free_columns(K):
+    """대상 칸으로 정할 수 있는 칸: 기록 종류의 글 · 고르는 값 칸 중 아직 대상을 가리키지 않는 것."""
+    return [{'type': T, 'prop': p['name']} for T in K['types'] for p in K['props'].get(T, [])
+            if not p.get('ref_class') and p.get('dtype') in ('text', 'choice')]
+
+
+def value_info(K, t, type_name, label, value, rid=None):
+    """"이 값": 기록 표의 값 하나가 가리키는 대상, 비슷한 대상, 같은 줄의 다른 대상과 두 분류가 이어져 있는지."""
+    import difflib
+    from core import engine
+    if type_name not in K['types']:
+        return None
+    prop = K['alias'].get((type_name, label), label)
+    props = {p['name']: p for p in K['props'].get(type_name, [])}
+    P = props.get(prop)
+    out = {'type': type_name, 'label': label, 'prop': prop if P else None, 'dtype': P and P.get('dtype'),
+           'class': P and P.get('ref_class'), 'entity': None, 'similar': [], 'row': []}
+    if not P:
+        return out
+    C = P.get('ref_class')
+    rows = {(c['name'], r['name']): r for c in entity_table(K) for r in c['rows']}
+    v = str(value or '').strip()
+    if C and v:
+        e = engine.find_entity(K, C, v)
+        if e:
+            r = rows.get((e['class_name'], e['name']), {})
+            out['entity'] = {'class': e['class_name'], 'name': e['name'], 'records': r.get('records', 0), 'aliases': r.get('aliases', []),
+                             'attrs': {k: x for k, x in (r.get('attrs') or {}).items() if engine.filled(x)}}
+        else:
+            names = [m['name'] for m in engine.members(K, C)]
+            out['similar'] = [{'name': n, 'records': rows.get((C, n), {}).get('records', 0)}
+                              for n in difflib.get_close_matches(v, names, n=3, cutoff=0.5)]
+    if C and rid:
+        rec = t.get('records', select='data', id=f'eq.{int(rid)}', type_name=f'eq.{type_name}')
+        for k, cell in ((rec[0].get('data') or {}).items() if rec else []):
+            p2 = props.get(K['alias'].get((type_name, k), k))
+            if not p2 or not p2.get('ref_class') or p2['name'] == prop:
+                continue
+            raw = cell.get('value') if isinstance(cell, dict) and engine.filled(cell.get('value')) else (cell.get('raw') if isinstance(cell, dict) else cell)
+            if not engine.filled(raw):
+                continue
+            e2 = engine.find_entity(K, p2['ref_class'], str(raw))
+            linked = any({l['from_ref'], l['to_ref']} == {C, p2['ref_class']} for l in K['links'])
+            out['row'].append({'label': k, 'class': p2['ref_class'], 'name': e2['name'] if e2 else str(raw), 'known': bool(e2), 'linked': linked})
+    return out
+
+
 def entity_table(K):
     """분류마다 대상 표: 이름 · 별칭 · 정보 · 그 대상을 가리킨 기록 수. 대상을 가리키는 칸도 함께."""
     from core import engine
@@ -134,7 +181,8 @@ def install_routes(app, session, gateway):
         from core.edits import card_text
         return await run(g, token, tid, lambda S: {'can_edit': editable,
                                                      **remembered(S['t'], 'entities', [], lambda: {'has_records': bool(S['K']['types']),
-                                                                                                   'classes': entity_table(S['K']), 'links': class_links(S['K'])}),
+                                                                                                   'classes': entity_table(S['K']), 'links': class_links(S['K']),
+                                                                                                   'columns': free_columns(S['K'])}),
                                                      'cards': edit_cards(S), 'dtypes': list(engine.DTYPE_KO.items()),
                                                      'undoable': [{'id': q['id'], 'kind': q['kind'], 'text': card_text(q), 'at': q['decided_at']}
                                                                   for q in S['done_cards']]})
@@ -147,12 +195,28 @@ def install_routes(app, session, gateway):
         from core.edits import card
 
         def work(S):
+            from core import engine
+            from core.edits import card_text
             try:
-                return card(S['K'], body.kind, body.payload)
+                payload = card(S['K'], body.kind, body.payload)
             except (ValueError, TypeError) as exc:
                 raise HTTPException(422, str(exc) if isinstance(exc, ValueError) else '고친 값을 확인해 주세요.') from None
-        payload = await run(g, token, tid, work)
-        return {'id': await g.rpc(token, 'passo_user_card', {'tid': tid, 'card_kind': body.kind, 'payload': payload})}
+            q = {'kind': body.kind, 'payload': payload}
+            return payload, card_text(q), engine.impact(S['t'], S['K'], q)  # 카드 한 줄과 영향 미리보기를 바로 보인다
+        payload, text, impact = await run(g, token, tid, work)
+        return {'id': await g.rpc(token, 'passo_user_card', {'tid': tid, 'card_kind': body.kind, 'payload': payload}),
+                'kind': body.kind, 'text': text, 'impact': impact}
+
+    @app.get('/v1/workspaces/{tid}/value')
+    async def this_value(tid: int, type_name: str = Query(min_length=1, max_length=200), label: str = Query(min_length=1, max_length=200),
+                         value: str = Query('', max_length=500), rid: int | None = Query(None, ge=1),
+                         token=Depends(session), g=Depends(gateway)):
+        """"이 값": 기록 표 · 확인 카드의 값이 가리키는 대상과 같은 줄의 다른 대상(읽기만, 카드는 [같은 대상] · [등록] · [이어 보기]로 올린다)."""
+        _, editable = await asyncio.gather(g.authorize(token, tid), can_review(g, token, tid))
+        out = await run(g, token, tid, lambda S: value_info(S['K'], S['t'], type_name, label, value, rid))
+        if out is None:
+            raise HTTPException(404, '기록 종류를 찾지 못했어요.')
+        return {**out, 'can_edit': editable}
 
     @app.post('/v1/workspaces/{tid}/edits/{qid}/undo')
     async def undo_edit(tid: int, qid: int, token=Depends(session), g=Depends(gateway)):

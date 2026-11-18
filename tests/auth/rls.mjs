@@ -62,6 +62,7 @@ try {
  await db.exec(await readFile('db/migrations/026_job_step.sql','utf8'));
  await db.exec(await readFile('db/migrations/027_reading_notes.sql','utf8'));
  await db.exec(await readFile('db/migrations/028_meanings.sql','utf8'));
+ await db.exec(await readFile('db/migrations/029_column_to_entities.sql','utf8'));
  check('migrations apply to original schema',true);
  for(let n=1;n<=5;n++) {
   await db.query('insert into auth.users(id) values($1)',[uid(n)]);
@@ -106,6 +107,16 @@ try {
   && (await db.query("select data->'폭'->>'value' v from public.records where id=$1",[mr])).rows[0].v==='700');
  check('meaning is kept as a reading note',(await db.query("select count(*)::int n from public.reading_notes where tenant_id=1 and kind='뜻 풀이'")).rows[0].n===1);
  await denied('a meaning card is answered once',()=>as(1,'select public.passo_apply_meaning($1,$2,$3,$4)',[1,qA,rule,{[mr]:{'폭':700}}]));
+ await db.exec(`insert into public.object_types(tenant_id,name,kind) values(1,'A','기록') on conflict do nothing;
+  insert into public.property_defs(tenant_id,type_name,name,dtype) values(1,'A','vendor','text'),(1,'A','qty','number')`);
+ const colCard=(n,prop)=>as(n,"select public.passo_user_card(1,'칸 설정',$1) id",[{type:'A',op:'대상 칸',prop,class:'거래처',values:['한샘','나이스']}]);
+ await denied('viewer cannot make a column into entities',()=>colCard(3,'vendor'));
+ const cid=(await colCard(1,'vendor'))[0].id;
+ check('owner applies column-to-entities card',(await as(1,'select public.passo_user_card_answer(1,$1,true) r',[cid]))[0].r.applied===true);
+ check('column now points to the class',(await db.query("select ref_class from public.property_defs where tenant_id=1 and type_name='A' and name='vendor'")).rows[0].ref_class==='거래처');
+ check('column values become entities',(await db.query("select count(*)::int n from public.entities where tenant_id=1 and class_name='거래처'")).rows[0].n===2);
+ const nid=(await colCard(1,'qty'))[0].id;
+ await denied('number column cannot become an entity column',()=>as(1,'select public.passo_user_card_answer(1,$1,true)',[nid]));
  await denied('authenticated cannot write reading notes directly',()=>as(1,"insert into public.reading_notes(tenant_id,kind,label) values(1,'고친 글씨','x')"));
  for (const table of ['users','org_members','memberships','invites','auth_identity_links','ai_logs','chat_sessions','eval_votes','passo_checkpoints']) {
   await denied(`authenticated cannot read private ${table}`,()=>as(1,`select * from public.${table}`));

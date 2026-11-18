@@ -33,10 +33,10 @@ function EditCards({cards,busy,answer}:{cards:Card[],busy:boolean,answer:(id:num
   <div className="card-actions"><button disabled={busy} onClick={()=>answer(c.id,false)}>아니요</button><button className="primary" disabled={busy} onClick={()=>answer(c.id,true)}>적용</button></div></article>)}</section>;
 }
 
-function ClassTools({cls,members,busy,post}:{cls:string,members:string[],busy:boolean,post:Post}){
- const [task,setTask]=useState('정보'),[a,setA]=useState(''),[b,setB]=useState('text'),[picked,setPicked]=useState<string[]>([]);
+function ClassTools({cls,members,busy,post,onLink}:{cls:string,members:string[],busy:boolean,post:Post,onLink?:()=>void}){
+ const [task,setTask]=useState(''),[a,setA]=useState(''),[b,setB]=useState('text'),[picked,setPicked]=useState<string[]>([]);
  const go=async(kind:string,payload:object)=>{if(await post(kind,payload)){setA('');setPicked([]);}};
- return <div className="class-tools"><div className="segments">{['정보','별칭','묶기','상위 분류'].map(t=><button key={t} aria-pressed={task===t} onClick={()=>{setTask(t);setA('');}}>{t}</button>)}</div>
+ return <div className="class-tools"><div className="class-tool-buttons">{([['정보','정보 더하기'],['별칭','별칭 더하기'],['묶기','하위 분류로 묶기'],['상위 분류','상위 분류 정하기']] as const).map(([t,l])=><button key={t} aria-pressed={task===t} onClick={()=>{setTask(task===t?'':t);setA('');setPicked([]);}}>{l}</button>)}{onLink&&<button onClick={onLink}>이어 보기</button>}</div>
   {task==='정보'&&<div className="pick-form"><label>새 정보 이름<input value={a} maxLength={100} onChange={e=>setA(e.target.value)} placeholder="예: 단가, 설치일"/></label>
    <label>값 종류<select value={b} onChange={e=>setB(e.target.value)}>{DTYPES.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label>
    <button className="primary" disabled={busy||!a.trim()} onClick={()=>go('대상 속성',{class:cls,attr:a,dtype:b})}>정보 더하기</button></div>}
@@ -49,6 +49,16 @@ function ClassTools({cls,members,busy,post}:{cls:string,members:string[],busy:bo
   {task==='상위 분류'&&<div className="pick-form"><label>상위 분류 이름<input value={a} maxLength={100} onChange={e=>setA(e.target.value)} placeholder="예: 자산"/></label>
    <button className="primary" disabled={busy||!a.trim()} onClick={()=>go('상위 분류',{class:cls,parent:a,members:[]})}>상위 분류 정하기</button></div>}
  </div>;
+}
+
+function ColumnToEntities({columns,busy,post}:{columns:{type:string,prop:string}[],busy:boolean,post:Post}){
+ // 칸을 골라 대상으로 만들기: AI가 대상으로 잡지 않은 글 칸을 대상 분류를 가리키는 칸으로 정한다(카드로 올라가 [적용])
+ const [pick,setPick]=useState(0),[cls,setCls]=useState('');const c=columns[Math.min(pick,columns.length-1)];
+ return <section className="panel column-to-entities"><h2>칸을 골라 대상으로 만들기</h2>
+  <p className="muted">AI가 대상으로 잡지 않은 칸이 있으면 골라서 분류 이름을 적어요. 그 칸의 값들이 그 분류의 대상이 되고, 카드로 올라가 [적용]을 눌러야 반영돼요.</p>
+  <div className="pick-form"><label>칸<select value={pick} onChange={e=>setPick(Number(e.target.value))}>{columns.map((x,i)=><option key={`${x.type}.${x.prop}`} value={i}>{x.type} · {x.prop}</option>)}</select></label>
+   <label>분류 이름<input value={cls} maxLength={100} onChange={e=>setCls(e.target.value)} placeholder="예: 품목, 거래처"/></label>
+   <button className="primary" disabled={busy||!cls.trim()||!c} onClick={async()=>{if(c&&await post('칸 설정',{type:c.type,op:'대상 칸',prop:c.prop,class:cls.trim()}))setCls('');}}>적용</button></div></section>;
 }
 
 function LinkAttrs({link,busy,post}:{link:ClassLink,busy:boolean,post:Post}){
@@ -77,7 +87,7 @@ function Cell({value,changed,editing,label,onEdit,onDone}:{value:string,changed:
 }
 
 export function Entities({request,go}:{request:Request,go:(v:string)=>void}){
- const [data,setData]=useState<{can_edit:boolean,has_records:boolean,classes:EntityClass[],links:ClassLink[],cards:Card[],undoable:{id:number,kind:string,text:string}[]}|null>(null),[tab,setTab]=useState(''),[q,setQ]=useState('');
+ const [data,setData]=useState<{can_edit:boolean,has_records:boolean,classes:EntityClass[],links:ClassLink[],cards:Card[],undoable:{id:number,kind:string,text:string}[],columns?:{type:string,prop:string}[]}|null>(null),[tab,setTab]=useState(''),[q,setQ]=useState('');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[changed,setChanged]=useState<Record<string,string>>({}),[cell,setCell]=useState<string|null>(null);
  const load=useCallback(()=>request('entities').then(d=>{setData(d);setTab(t=>t&&d.classes.some((c:EntityClass)=>c.name===t)?t:d.classes[0]?.name||'');}).catch(e=>setError(fail(e))),[request]);
  useEffect(()=>{load();},[load]);
@@ -117,6 +127,7 @@ export function Entities({request,go}:{request:Request,go:(v:string)=>void}){
     <div className="toolbar"><div><h2>{C.name} <small className="muted">대상 {C.total}개</small></h2>
      {(C.parent||C.children.length>0||C.pointed_by.length>0)&&<p className="muted class-meta">{[C.parent&&`상위 분류 ${C.parent}`,C.children.length&&`하위 분류 ${C.children.join(', ')}`,C.pointed_by.length&&`가리키는 칸 ${C.pointed_by.map(refText).join(', ')}`].filter(Boolean).join(' · ')}</p>}</div>
      <input className="search" aria-label="대상 찾기" placeholder="이름이나 별칭으로 찾기" value={q} onChange={e=>setQ(e.target.value)}/></div>
+    {data.can_edit&&<ClassTools key={C.name} cls={C.name} members={C.rows.map(r=>r.name)} busy={ed.busy} post={ed.post} onLink={()=>go('graph')}/>}
     <div className="table-wrap entity-table"><table className="plain-table"><thead><tr><th>이름</th><th>별칭</th>{C.attrs.map(a=><th key={a}>{a}</th>)}<th>기록</th></tr></thead>
      <tbody>{rows.map(r=><tr key={r.id}><th scope="row">{r.name}</th><td>{r.aliases.join(', ')||<span className="muted">—</span>}</td>
       {C.attrs.map(a=>{const k=`${r.id}\u0000${a}`,v=k in changed?changed[k]:raw(r.attrs[a]);
@@ -124,10 +135,11 @@ export function Entities({request,go}:{request:Request,go:(v:string)=>void}){
       <td>{r.records}줄</td></tr>)}</tbody></table>
      {!rows.length&&<p className="muted table-note">찾는 대상이 없어요.</p>}</div>
     {data.can_edit&&pending>0&&<div className="save-bar" role="status"><span>고친 칸 {pending}개 · 올리면 카드로 보여요</span><button className="primary" disabled={ed.busy} onClick={upload}>바꾼 것 올리기</button></div>}
-    {!C.attrs.length&&<p className="muted">정보 칸이 없어요. 아래에서 [정보 더하기]로 단가 · 설치일 같은 정보를 더할 수 있어요.</p>}
-    {data.can_edit&&<details className="paper-group"><summary>정보 더하기 · 별칭 · 묶기</summary><ClassTools cls={C.name} members={C.rows.map(r=>r.name)} busy={ed.busy} post={ed.post}/></details>}
+    {!C.attrs.length&&<p className="muted">정보 칸이 없어요. 위의 [정보 더하기]로 단가 · 설치일 같은 정보를 더할 수 있어요.</p>}
+    
     {data.can_edit&&!!links.length&&<details className="paper-group"><summary>관계 정보 <span>{links.length}개</span></summary>{links.map(l=><LinkAttrs key={l.id} link={l} busy={ed.busy} post={ed.post}/>)}</details>}
    </section>}</div>}
+  {data?.can_edit&&!!data.columns?.length&&<ColumnToEntities columns={data.columns} busy={ed.busy} post={ed.post}/>}
   {data?.can_edit&&!!data.undoable.length&&<details className="paper-group"><summary>최근 직접 고친 것 <span>{data.undoable.length}개</span></summary>
    {data.undoable.map(u=><div className="toolbar link-row" key={u.id}><span>{u.text}</span><button disabled={busy||ed.busy} onClick={async()=>{setBusy(true);setError('');setNotice('');
     try{await request(`edits/${u.id}/undo`,{method:'POST',body:'{}'});await load();setNotice('되돌렸어요.');}catch(e){setError(fail(e));}finally{setBusy(false);}}}>되돌리기</button></div>)}</details>}
@@ -237,6 +249,12 @@ export function KnowledgeGraph({request,go}:{request:Request,go:(v:string)=>void
   {data&&!data.has_records&&<div className="empty"><h2>아직 확정한 기록이 없어요.</h2><button className="primary" onClick={()=>go('upload')}>올리기</button></div>}
   {data?.has_records&&<div className="graph-layout"><section>
     <div className="segments" aria-label="보기">{[['구조만',false],['대상까지',true]].map(([l,v])=><button key={String(l)} aria-pressed={withEntities===v} onClick={()=>{setWithEntities(v as boolean);setPicked(null);}}>{l}</button>)}</div>
+    {data.can_edit&&<section className="panel link-pick"><h2>두 칸을 골라 이어 보기</h2>
+     <div className="pick-form"><label>칸<select value={a} onChange={e=>setA(e.target.value)}>{data.refs.map(r=><option key={r} value={r}>{refText(r)}</option>)}</select></label>
+      <label>이어질 칸<select value={b} onChange={e=>setB(e.target.value)}>{data.refs.map(r=><option key={r} value={r}>{refText(r)}</option>)}</select></label>
+      <label>관계<select value={kind} onChange={e=>setKind(e.target.value)}>{data.kinds.map(k=><option key={k}>{k}</option>)}</select></label>
+      <label>관계 이름(없어도 돼요)<input value={name} maxLength={100} onChange={e=>setName(e.target.value)} placeholder="예: 거래처"/></label></div>
+     <button className="primary" disabled={!!busy||a===b} onClick={()=>act('link','links',{from_ref:a,to_ref:b,kind,...(name.trim()?{name:name.trim()}:{})},'관계 제안 카드로 올렸어요. [맞아요]를 눌러야 그림에 이어져요.')}>이어 보기</button><p className="muted">"관계 제안" 카드로 올라가고, 기록에서 함께 나온 줄 수가 근거로 보여요. [맞아요]를 눌러야 실선이 돼요.</p></section>}
     <div className="graph-box"><GraphCanvas nodes={data.nodes} edges={data.edges} picked={picked} onPick={setPicked}/>
      {node&&<NodeCard key={node.id} node={node} data={data} onPick={setPicked}/>}</div>
     <ul className="legend" aria-label="그림 읽는 법"><li><i className="dot t"/>기록 종류</li><li><i className="dot c"/>대상 분류</li><li><i className="dot p"/>칸</li><li><i className="dot a"/>대상 정보</li>{withEntities&&<li><i className="dot e"/>대상</li>}<li><i className="ln"/>확정</li><li><i className="ln dash"/>확인할 관계</li></ul>
@@ -253,12 +271,7 @@ export function KnowledgeGraph({request,go}:{request:Request,go:(v:string)=>void
      {data.can_edit&&<div className="card-actions"><button disabled={!!busy} onClick={()=>act(`n${p.id}`,`reviews/${p.id}`,{expected_payload:p.payload,answer:'reject'},'관계를 잇지 않았어요.')}>아니요</button>
       <button className="primary" disabled={!!busy} onClick={()=>act(`y${p.id}`,`reviews/${p.id}`,{expected_payload:p.payload,answer:'accept'},'이었어요. 그림에 실선으로 보여요.')}>맞아요</button></div>}</article>)}
     {!!data.links.length&&<details className="paper-group"><summary>확정한 관계 <span>{data.links.length}개</span></summary>{data.links.map(l=><div className="toolbar link-row" key={l.id}><span>{l.text}</span>{data.can_edit&&<button disabled={!!busy} onClick={()=>act(`c${l.id}`,`links/${l.id}/cut`,{},'관계를 끊었어요.')}>끊기</button>}</div>)}</details>}
-    {data.can_edit&&<details className="paper-group"><summary>이어져 있다고 생각하는 칸이 있나요?</summary>
-     <div className="pick-form"><label>칸<select value={a} onChange={e=>setA(e.target.value)}>{data.refs.map(r=><option key={r} value={r}>{refText(r)}</option>)}</select></label>
-      <label>이어질 칸<select value={b} onChange={e=>setB(e.target.value)}>{data.refs.map(r=><option key={r} value={r}>{refText(r)}</option>)}</select></label>
-      <label>관계<select value={kind} onChange={e=>setKind(e.target.value)}>{data.kinds.map(k=><option key={k}>{k}</option>)}</select></label>
-      <label>관계 이름(없어도 돼요)<input value={name} maxLength={100} onChange={e=>setName(e.target.value)} placeholder="예: 거래처"/></label></div>
-     <button className="primary" disabled={!!busy||a===b} onClick={()=>act('link','links',{from_ref:a,to_ref:b,kind,...(name.trim()?{name:name.trim()}:{})},'관계 제안 카드로 올렸어요. [맞아요]를 눌러야 그림에 이어져요.')}>이어 보기</button></details>}
+
     <button onClick={()=>go('home')}>홈으로</button>
    </section></div>}</>;
 }

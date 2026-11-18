@@ -4,7 +4,7 @@
 from . import engine
 
 KINDS = ("속성 값", "대상", "대상 속성", "같은 대상", "상위 분류", "관계 속성", "칸 설정")
-OPS = ("단위·설명", "다른 이름", "칸 더하기")
+OPS = ("단위·설명", "다른 이름", "칸 더하기", "대상 칸")
 
 
 def _name(v, what, limit=100):
@@ -88,6 +88,19 @@ def card(K, kind, P):
         prop = P.get("prop")
         if prop not in props:
             raise ValueError("칸을 고르세요.")
+        if op == "대상 칸":  # 이 칸은 무엇을 가리키나요? · 칸을 골라 대상으로 만들기
+            if props[prop].get("ref_class"):
+                raise ValueError(f"이미 '{props[prop]['ref_class']}'을(를) 가리키는 칸이에요.")
+            if props[prop].get("dtype") not in ("text", "choice"):
+                raise ValueError("글 칸만 대상 칸으로 정할 수 있어요.")
+            C = _name(P.get("class"), "분류 이름")
+            if C in K["types"]:
+                raise ValueError("기록 종류와 같은 이름은 분류 이름으로 쓸 수 없어요.")
+            df = engine.frame(K, T)
+            seen = list(dict.fromkeys(str(v).strip() for v in (df[prop].dropna() if prop in df else []) if str(v).strip()))
+            fresh = [v for v in seen if not (C in K["classes"] and engine.find_entity(K, C, v))][:300]
+            return {"type": T, "op": op, "prop": prop, "class": C, "values": fresh,
+                    "rows": int(df[prop].notna().sum()) if prop in df else 0}
         if op == "다른 이름":
             alias = _name(P.get("alias"), "다른 이름", 200)
             if (T, alias) in K["alias"]:
@@ -119,4 +132,6 @@ def card_text(q):
         return f"'{P['type']}'에 칸 '{P['name']}'({engine.DTYPE_KO.get(P['dtype'], P['dtype'])}) 더하기"
     if P.get("op") == "다른 이름":
         return f"'{P['alias']}'라고 적힌 칸을 '{P['type']}.{P['prop']}' 칸으로 읽기"
+    if P.get("op") == "대상 칸":
+        return f"'{P['type']}.{P['prop']}' 칸을 대상 분류 '{P['class']}'로 · 새 대상 {len(P['values'])}개 · 기록 {P.get('rows', 0)}줄"
     return f"'{P['type']}.{P['prop']}' 단위 {P.get('unit') or '없음'} · 설명 {P.get('description') or '없음'}"
