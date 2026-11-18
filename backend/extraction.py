@@ -163,6 +163,7 @@ def make_payload(sheet, found, uploaded=None, tables=None):
                 spans.setdefault(c['label'],[]).append({'rec':index,'page':page,'quote':c.get('source_raw'),
                     'box':ruled.get(id(c)) or (placed[n] if n < len(placed) else box(c)),'model_box':box(c),'location':'estimated',
                     'unsure':c.get('uncertain',False),'unreadable':c.get('unreadable',False)})
+    keep_in_columns(spans, sheet.get('columns', []))
     names = [*sheet.get('columns',[]), *(c['label'] for c in sheet.get('doc_fields',[])), sheet['title']]
     pages = {p: ocr.unread(lines, used.get(p,set()), names) for p,lines in found.items()}
     result = {'records':records,'spans':spans,
@@ -170,6 +171,24 @@ def make_payload(sheet, found, uploaded=None, tables=None):
     if assumed:
         result['date_assumed'] = assumed
     return result
+
+
+def keep_in_columns(spans, columns, least=3):
+    """하네스: 표의 열마다 상자들의 보통 가로 자리(왼쪽 · 오른쪽 끝의 가운데 값)를 재고, 그 자리와 가로로 겹치지 않는
+    상자는 그 열의 자리로 되돌린다(세로는 그대로). 칸이 합쳐진 줄(일계 · 누계 등)에서 표 선 격자가 옆 표의 칸을
+    짚을 때를 잡는다. 상자가 least 개보다 적은 열은 재지 않는다."""
+    for label in columns:
+        boxes = [s['box'] for s in spans.get(label, []) if s.get('box')]
+        if len(boxes) < least:
+            continue
+        mid = lambda v: sorted(v)[len(v) // 2]
+        x0, x1 = mid([b[0] for b in boxes]), mid([b[2] for b in boxes])
+        if x0 >= x1:
+            continue
+        for s in spans[label]:
+            b = s.get('box')
+            if b and (b[2] <= x0 or b[0] >= x1):
+                s['box'] = [x0, b[1], x1, b[3]]
 
 
 def tails(coverage, least=3):

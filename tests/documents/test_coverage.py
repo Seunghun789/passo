@@ -108,3 +108,10 @@ def test_without_tables_ocr_placement_is_used():
     found = [{'text': f'값{n:03d}', 'conf': 0.9, 'box': [110, 44 + n * 28, 190, 69 + n * 28]} for n in range(4)]
     p = make_payload(sheet([f'값{n:03d}' for n in range(4)]), {'1': found})
     assert [x['box'][1] for x in p['spans']['품명']] == [44 + n * 28 for n in range(4)]
+
+
+def test_box_outside_its_column_is_pulled_back():
+    from backend.extraction import keep_in_columns
+    spans = {'수량': [{'box': [270, 44 + n * 28, 330, 72 + n * 28]} for n in range(5)] + [{'box': [517, 958, 637, 985]}]}
+    keep_in_columns(spans, ['수량'])
+    assert spans['수량'][-1]['box'] == [270, 958, 330, 985] and spans['수량'][0]['box'] == [270, 44, 330, 72]
